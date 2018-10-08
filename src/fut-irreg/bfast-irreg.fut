@@ -76,20 +76,21 @@ let matsqr_filt [m] [n] (flgs: [n]bool) (xss: [m][n]f32) : *[m][m]f32 =
 
 -- | The core of the alg: the computation for a time series
 --   for one pixel.
+-- Line numbers refer to step numbers in algorithm 1 on page 3 in
+-- bfast-paper.pdf
 let bfast [N] (f: f32) (k: i32) (n: i32)
               (hfrac: f32) (lam: f32)
               (y: [N]f32) :
               []f32 =   -- result has lengths N-n
-  -- it's ok, don't panick: whatever is invariant to the
-  -- outer map is gonna be hoisted out!
+  -- Whatever is invariant to the outer map will be hoisted out
   let X = mkX (2*k+2) N f
 
   let m    = n
   let flgs = map (\v -> !(f32.isnan v)) y
 
-  let flgsh = unsafe (flgs[:m])
-  let yh    = unsafe (y[:m])
-  let Xh    = unsafe (X[:,:m])
+  let flgsh = unsafe (flgs[:m])   -- flgsh shape: [m]
+  let yh    = unsafe (y[:m])      -- yh shape:    [m]
+  let Xh    = unsafe (X[:,:m])    -- Xh shape:    [2k+1][m]
 
   -- line 2, beta-hat computation
   -- fit linear regression model:
@@ -109,15 +110,15 @@ let bfast [N] (f: f32) (k: i32) (n: i32)
   let y_error_all = map3 (\flg ye yep -> if flg then (ye-yep) else 0) flgs y y_pred -- [N]
 
   let num_nans = map (\flg -> if flg then 0 else 1) flgs |> scan (+) 0
-  let ns = n - unsafe num_nans[n-1]
-  let Ns = N - unsafe num_nans[N-1]
-  let ms = m - unsafe num_nans[m-1]
+  let ns = n - unsafe num_nans[n-1] -- num valids (non-NaN) in y[:n]
+  let Ns = N - unsafe num_nans[N-1] -- num valids (non-NaN) in y
+  let ms = m - unsafe num_nans[m-1] -- num valids (nin-NaN) in y[:m] (remember m == n)
 
   let (_,y_error,val_inds)  =
       unzip3 <| filter (\(flg,_,_) -> flg) (zip3 flgs y_error_all (iota N))
-  
+
   -- moving sums:
-  let h = t32 ( (r32 m) * hfrac )
+  let h = t32 ( (r32 m) * hfrac ) -- calculate MOSUM bandwidth
   let MO_fst = reduce (+) 0 ( unsafe (y_error[ns-h+1 : ns+1]) )
   let MO_ini = map (\j ->
                       if j == 0 then MO_fst
@@ -135,7 +136,7 @@ let bfast [N] (f: f32) (k: i32) (n: i32)
 
   let val_inds' = drop ns val_inds |> map (\x -> x-n)
   let full_MO = scatter (replicate (N-n) f32.nan) val_inds' MO
-  
+
   -- line 10: BOUND computation (will be hoisted)
   let BOUND = map (\q -> let t   = n+1+q
                          let tmp = logplus ((r32 t) / (r32 n))
@@ -148,10 +149,13 @@ let bfast [N] (f: f32) (k: i32) (n: i32)
   in  breaks
 
 -- | entry point
-entry main [m][N] (k: i32) (n: i32) (freq: f32)
-                  (hfrac: f32) (lam: f32)
-                  (images : [m][N]f32) :
-                  ([m][]f32) =
-  let res = map (bfast freq k n hfrac lam) images
-  in  res
+entry main [m][N] (k: i32)              -- Number of harmonic terms
+                  (n: i32)              -- Size of stable history period
+                  (freq: f32)           -- Annual frequency
+                  (hfrac: f32)          -- MOSUM bandwidth as fraction of n
+                  (lam: f32)            -- Lambda (critical value)
+                  (images : [m][N]f32)  -- Y matrix, each row is a pixel
+                  : ([m][]f32) =        -- Second dimension is N-n
+                                        --(i.e., same length as monitor period)
+  map (bfast freq k n hfrac lam) images
 
