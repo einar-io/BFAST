@@ -39,6 +39,7 @@ let mkX (k2p2: i32) (N: i32) (f: f32) : [k2p2][N]f32 =
       in  scatter A (iota (n*m)) A'
 
   let mat_inv [n] (A: [n][n]f32): [n][n]f32 =
+  -- Cosmin recommends: separate kernel for this fun, block size m*n
     let m = 2*n
     -- Pad the matrix with the identity matrix.
     let Ap = map (\ind -> let (i, j) = (ind / m, ind % m)
@@ -83,7 +84,7 @@ let bfast [N] (f: f32) (k: i32) (n: i32)
               (y: [N]f32) :
               []f32 =   -- result has lengths N-n
   -- Whatever is invariant to the outer map will be hoisted out
-  let X = mkX (2*k+2) N f
+  let X = mkX (2*k+2) N f -- X shape: [2k+2][N]
 
   let m    = n
   let flgs = map (\v -> !(f32.isnan v)) y
@@ -94,6 +95,7 @@ let bfast [N] (f: f32) (k: i32) (n: i32)
 
   -- line 2, beta-hat computation
   -- fit linear regression model:
+  -- Kernel call for each of these following 4 calculations
   let Xsqr = matsqr_filt flgsh Xh               -- Xsqr  shape: [2k+2][2k+2]
   let Xinv = mat_inv    Xsqr                    -- Xinv  shape: [2k+2][2k+2]
   let beta0= matvecmul_row_filt flgsh Xh yh     -- beta0 shape:       [2k+2]
