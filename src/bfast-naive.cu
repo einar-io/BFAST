@@ -293,10 +293,13 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   const int N = in->shp[1];
 
 
+  int k2p2 = k*2+2;
+
+
   float *d_Y; // m by N
   const size_t mem_Y = m * N * sizeof(float);
   CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMemcpy(d_Y, images, mem_Y));
+  CUDA_SUCCEED(cudaMemcpy(d_Y, images, mem_Y, cudaMemcpyHostToDevice));
 
 
   float *d_X; // k2p2 by N
@@ -307,7 +310,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 grid(CEIL_DIV(N, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    mk_X<<<grid, block>>>(d_X, k2p2, N, f);
+    mk_X<<<grid, block>>>(d_X, k2p2, N, freq);
   }
 
 
