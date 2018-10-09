@@ -53,10 +53,20 @@ int main(int argc, char **argv)
   struct bfast_in input;
   struct bfast_out output;
 
+  memset(&input, 0, sizeof(struct bfast_in));
+  memset(&output, 0, sizeof(struct bfast_out));
+
   read_bfast_input(&input);
   //bfast_naive(&input, &output);
   //write_outputs(&output);
   write_sanity_outputs(&input);
 
+
+
+  free(input.images);
+
+  if (output.breaks != NULL) {
+    free(output.breaks);
+  }
   return 0;
 }
