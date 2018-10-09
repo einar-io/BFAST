@@ -60,7 +60,7 @@ let mkX (k2p2: i32) (N: i32) (f: f32) : [k2p2][N]f32 =
   let mat_inv [n] (A: [n][n]f32): [n][n]f32 =
     let m = 2*n
     -- Pad the matrix with the identity matrix.
-    let Ap = map (\ind -> let (i, j) = (ind / m, ind % m)
+    let Ap = map (\ind -> let (i, j) = (ind / m, ind % m) -- (row, col)
                           in  if j < n then unsafe ( A[i,j] )
                                        else if j == n+i
                                             then 1.0
@@ -110,7 +110,7 @@ entry main [m][N] (k: i32) (n: i32) (freq: f32)
   let Xh  = unsafe (X[:,:n])
   let Xth = unsafe (Xt[:n,:])
   let Yh  = unsafe (images[:,:n])
-  
+
   ----------------------------------
   -- 2. mat-mat multiplication    --
   ----------------------------------
@@ -137,7 +137,16 @@ entry main [m][N] (k: i32) (n: i32) (freq: f32)
   ---------------------------------------------
   -- 5. filter etc.                          --
   ---------------------------------------------
-  -- XXX: ASSUME            N < 1024
+  -- Cosmin's tip for this bit: Assume N < 1024
+
+  -- Nss:        Nss[i] where 0<=i<m is the number of valid (non-NaN) entries
+  --             for time series i
+  -- y_errors:   y_errors[i] where 0<=i<m is an array of errors values for time
+  --             series i, partitioned such that valid (non-NaN) entries come
+  --             before invalid (NaN) entries.
+  -- vald_indss: vald_indss[i] where 0<=i<m is an array of indices indicating
+  --             the original  positions of the elements in y_errors[i], i.e.,
+  --             before partitioning.
   let (Nss, y_errors, val_indss) = unsafe ( intrinsics.opaque <| unzip3 <|
     map2 (\y y_pred ->
             let y_error_all = zip y y_pred |>
