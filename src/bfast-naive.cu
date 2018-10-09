@@ -6,6 +6,7 @@
 #define CUDA_SUCCEED(x) (assert((x) == cudaSuccess))
 
 #define IDX_2D(__r,__c,__nc) ((__r) * (__nc) + (__c))
+#define CEIL_DIV(a,b) (((a) + (b) - 1) / (b))
 
 __global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
 {
@@ -20,7 +21,7 @@ __global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
   if (i == 0) { val = 1.0; }
   else if (i == 1) { val = (float)j; }
   else {
-    float angle = 2.0 * pi * (float)(i/2) * (float)j / f;
+    float angle = 2.0 * M_PI * (float)(i/2) * (float)j / f;
     if (i % 2 == 0) {
       val = sin(angle);
     } else {
@@ -31,16 +32,17 @@ __global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
   X[IDX_2D(i, j, N)] = val;
 }
 
-__global__ void mat_transpose(float *A, float *B, int heightA, int widthA) {
+__global__ void mat_transpose(float *A, float *B, int heightA, int widthA)
+{
 
   int gidx = blockIdx.x * blockDim.x + threadIdx.x;
   int gidy = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if((gidx >= widthA) || (gidy >= heightA)) {
+  if(gidx >= widthA || gidy >= heightA) {
     return;
   }
 
-  B[gidx*heightA+gidy] = A[gidy*widthA + gidx];
+  B[IDX_2D(gidx, gidy, heightA)] = A[IDX_2D(gidy, gidx, widthA)];
 }
 
 __global__ void block_matmat_filt(float *Xh, float *Xth, float *Yh,
@@ -83,12 +85,16 @@ __global__ void block_mat_inv(float *Xsqr, float *Xinv, int k2p2)
   // Block dimensions (x,y,z): (2*k2p2, k2p2, 1)
 
   // When calling this kernel, remember to allocate dynamic shared memory:
-  // block_mat_inv<<<blah, blah, k2p2*k2p2>>>(bla)
+  // block_mat_inv<<<blah, blah, k2p2*2*k2p2>>>(bla)
+
+  if (threadIdx.x >= 2*k2p2 || threadIdx.y >= k2p2) {
+    return;
+  }
 
   float *sqr = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
   float *inv = &Xinv[blockIdx.x * (k2p2 * k2p2)];
 
-  __shared__ float A[]; // shape k2p2 by 2*k2p2
+  extern __shared__ float A[]; // shape k2p2 by 2*k2p2
 
   // Body of mat_inv map
   if (threadIdx.x < k2p2) {
@@ -152,8 +158,7 @@ __global__ void matmat_mul_filt(float *A, float *B, float *C, int rows_a,
   C[IDX_2D(gidy, gidx, cols_b)] = accum;
 }
 
-__global__ void block_matvecmul(float *Xinv float *beta0, float *beta,
-    int k2p2)
+__global__ void block_matvecmul(float *Xinv, float *beta0, float *beta, int k2p2)
 {
   // The C output from matmat_mul_filt is as follows
   //   C =
@@ -179,6 +184,8 @@ __global__ void block_matvecmul(float *Xinv float *beta0, float *beta,
 
   // Each block calculates on matrix-vector multiplication
   // Block size is k2p2
+
+  if (threadIdx.x >= k2p2) { return; }
 
   float *inv = &Xinv[blockIdx.x * (k2p2 * k2p2)];
   float *vct = &beta0[blockIdx.x * k2p2];
@@ -233,6 +240,7 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
   // Grid dimensions (x, y, z): (m, 1, 1)
   // Block dimensions (x, y, z ): (1024, 1, 1)
 
+  /*
   if (threadIdx.x >= N) { return; }
 
   float *y = &images[blockIdx.x * gridDim.x];
@@ -248,6 +256,7 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
   } else {
     y_error_all[threadIdx.x] = NAN;
   }
+  */
 
   /*
      //  horribelt
@@ -274,6 +283,100 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
 
 extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 {
+  int k = in->k;
+  int n = in->n;
+  float freq = in->freq;
+  float hfrac = in->hfrac;
+  float lam = in->lam;
+  float *images = in->images;
+  const int m = in->shp[0];
+  const int N = in->shp[1];
+
+
+  float *d_Y; // m by N
+  const size_t mem_Y = m * N * sizeof(float);
+  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMemcpy(d_Y, images, mem_Y));
+
+
+  float *d_X; // k2p2 by N
+  const size_t mem_X = k2p2 * N * sizeof(float);
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(N, block.x),
+              CEIL_DIV(k2p2, block.y),
+              1);
+    mk_X<<<grid, block>>>(d_X, k2p2, N, f);
+  }
+
+
+  float *d_Xt; // N by k2p2
+  const size_t mem_Xt = mem_X;
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_Xt));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(N, block.x),
+              CEIL_DIV(k2p2, block.y),
+              1);
+    mat_transpose<<<grid, block>>>(d_X, d_Xt, k2p2, N);
+  }
+
+
+  float *d_Xsqr; // List of m matrices that are k2p2 by k2p2
+  const size_t mem_Xsqr = k2p2 * k2p2;
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
+    dim3 block(8, 8, 1);
+    dim3 grid(m, 1, 1);
+    block_matmat_filt<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, k2p2, n);
+  }
+
+
+  float *d_Xinv; // List of m matrices that are k2p2 by k2p2
+  const size_t mem_Xinv = mem_Xsqr;
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
+    dim3 block(16, 8, 1);
+    dim3 grid(m, 1, 1);
+    const size_t shared_size = k2p2 * 2 * k2p2;
+    block_mat_inv<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
+  }
+
+
+  float *d_Yt; // N by m
+  const size_t mem_Yt = mem_Y;
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Yt));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(N, block.x),
+              CEIL_DIV(m, block.y),
+              1);
+    mat_transpose<<<grid, block>>>(d_Y, d_Yt, m, N);
+  }
+
+
+  // (k2p2 by n) times (n by m) is (k2p2 by m)
+  float *d_beta0;
+  const size_t mem_beta0 = k2p2 * m * sizeof(float);
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(m, block.x),
+              CEIL_DIV(k2p2, block.y),
+              1);
+    matmat_mul_filt<<<grid, block>>>(d_X, d_Yt, d_beta0, k2p2, n, m);
+  }
+
+
+  //float *d_beta;
+  //const size_t mem_beta = 
+  //{
+
+  //}
+
+
+
   // Step 1: mk_X, mat_transpose
   // Step 2: block_matmat_filt
   // Step 3: block_mat_inv
@@ -286,6 +389,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   // Step 6: kernel for map body. blocksize=n
   // Step 7: kernel for map body, kernel for map body
   // Step 8: kernel or map body, possibly scan
+
 
 
 
