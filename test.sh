@@ -1,1 +1,1 @@
-futhark-test --compiler=/bin/true --runner=./runner.sh src/tests/sanity.fut
+futhark-test --compiler=/bin/true --runner=src/bfast src/tests/tests.fut
