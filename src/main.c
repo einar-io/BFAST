@@ -116,7 +116,7 @@ int main(int argc, const char **argv)
   }
 
   if (entry == NULL) {
-    fprintf(stderr, "Usage: %s -e ENTRY [-o OUTFILE]\n");
+    fprintf(stderr, "Usage: %s -e ENTRY [-o OUTFILE]\n", argv[0]);
     fprintf(stderr, "  OUTFILE defaults to OUTPUT");
     return 1;
   }
