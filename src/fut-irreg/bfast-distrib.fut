@@ -7,9 +7,9 @@ let logplus (x: f32) : f32 =
   if x > (f32.exp 1)
   then f32.log x else 1
 
-let partitionCos [n] 't                    
+let partitionCos [n] 't
            (p : (t -> bool))
-           (dummy : t)           
+           (dummy : t)
            (arr : [n]t) : ([n]t, i32) =
   let cs  = map p arr
   let tfs = map (\f -> if f then 1 else 0) cs
@@ -17,14 +17,14 @@ let partitionCos [n] 't
   let isT = scan (+) 0 tfs
   let isF0= scan (+) 0 ffs
 
-  let i   = last isT  
+  let i   = last isT
   let isF = map (+i) isF0
-  let inds= map3 (\c iT iF ->            
-                    if c then iT-1 
+  let inds= map3 (\c iT iF ->
+                    if c then iT-1
                          else iF-1
                  ) cs isT isF
-  let r = scatter (replicate n dummy) inds arr            
-  in  (r, i) 
+  let r = scatter (replicate n dummy) inds arr
+  in  (r, i)
 
 -- | builds the X matrices; first result dimensions of size 2*k+2
 let mkX (k2p2: i32) (N: i32) (f: f32) : [k2p2][N]f32 =
@@ -127,11 +127,14 @@ entry main [m][N] (k: i32) (n: i32) (freq: f32)
   -- 4. several matrix-vector multiplication --
   ---------------------------------------------
   -- Call a kernel for each of these (mat-mat mul)
-  let beta0  = map (matvecmul_row_filt Xh) Yh   -- [2k+2]
+  --  Xh is k2p2 by n
+  --  Yh is m by n
+  --  Xt is N by k2p2
+  let beta0  = map (matvecmul_row_filt Xh) Yh   -- m by 2k+2
                |> intrinsics.opaque
-  let beta   = map2 matvecmul_row Xinv beta0    -- [2k+2]
+  let beta   = map2 matvecmul_row Xinv beta0    -- m by 2k+2
                |> intrinsics.opaque
-  let y_preds= map (matvecmul_row Xt) beta      -- [N]
+  let y_preds= map (matvecmul_row Xt) beta      -- m by N
                |> intrinsics.opaque
 
   ---------------------------------------------
@@ -141,11 +144,11 @@ entry main [m][N] (k: i32) (n: i32) (freq: f32)
 
   -- Nss:        Nss[i] where 0<=i<m is the number of valid (non-NaN) entries
   --             for time series i
-  -- y_errors:   y_errors[i] where 0<=i<m is an array of errors values for time
+  -- y_errors:   y_errors[i] where 0<=i<m is an array of error values for time
   --             series i, partitioned such that valid (non-NaN) entries come
   --             before invalid (NaN) entries.
   -- vald_indss: vald_indss[i] where 0<=i<m is an array of indices indicating
-  --             the original  positions of the elements in y_errors[i], i.e.,
+  --             the original positions of the elements in y_errors[i], i.e.,
   --             before partitioning.
   let (Nss, y_errors, val_indss) = unsafe ( intrinsics.opaque <| unzip3 <|
     map2 (\y y_pred ->
@@ -161,6 +164,9 @@ entry main [m][N] (k: i32) (n: i32) (freq: f32)
   ---------------------------------------------
   -- 6. ns and sigma                         --
   ---------------------------------------------
+  -- nss:    nss[i] where 0<=i<m is the number of valid (non-NaN) entries for
+  --         the HISTORYI PERIOD of time series i
+  -- sigmas: sigmas[i] where 0<=i<m is some statistics stuff
   let (nss, sigmas) = intrinsics.opaque <| unzip <|
     map2 (\yh y_error ->
             let ns    = map (\ye -> if !(f32.isnan ye) then 1 else 0) yh

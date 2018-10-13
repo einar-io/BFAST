@@ -1,0 +1,60 @@
+
+Already in scope:
+  int k, int n,
+  float freq, float hfrac, float lam,
+  float *Y, // m by N
+  const int m, const int N,
+  int k2p2 = k*2+2
+
+BFAST:
+  X = mkX(k2p2,N,freq)   // k2p2 by N
+  Xt = transpose(X)      // N by k2p2
+
+  // Xsqr: List of m matrices that are k2p2 by k2p2
+  Xsqr = block_matmat_filt(X, Xt, Y, k2p2, n);
+
+  // Xinv: List of m matrices that are k2p2 by k2p2
+  Xinv = mat_inv(Xsqr, k2p2);
+
+  // Xh is k2p2 by n
+  // Yh is m by n
+  // We want to multiply Xh with every row of Yh, and the result of
+  // each multiplication is a row in the result matrix
+  // This corresponds to doing a matrix-matrix multiplication between Xh
+  // and Yth and then transposing the result
+  // I.e.,    (k2p2 by n) * (n by m) is (k2p2 by m)
+  beta0t = matmat_mul_filt(X, Yt, k2p2, n, m);
+  beta0 = transpose(beta0t); // m by k2p2
+
+  // Xinv: list of m matrices of k2p2 by k2p2
+  // beta0: m by k2p2
+  // We want to multiply matrix i of Xinv with row i of beta0.
+  // The result of each multiplication is a row in the result matrix
+  beta = block_matvecmul(Xinv, beta0, k2p2); // m by k2p2
+
+  betat = transpose(beta);
+
+  // Same reasoning as in beta0 calculation
+  // Xt is N by k2p2
+  // betat is k2p2 by m
+  y_preds = matmat_mul(Xt, betat, N, k2p2, m); // m by N
+
+  // Y: m by N
+  // y_preds: m by N
+  (Nss, y_errors, val_indss) = step_5_kernel(Y, y_preds, N);
+  // Nss is m
+  // y_errors is m by N
+  // val_indss is m by N
+
+  // Yh is m by n
+  // y_errors is m by N
+  (nss, sigmas) = step_6_kernel(Yh, y_errors, m, n, N, k2p2);
+  // nss is m
+  // sigmas is m
+
+
+
+
+
+
+

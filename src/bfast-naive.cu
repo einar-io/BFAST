@@ -224,6 +224,100 @@ __global__ void matmat_mul(float *A, float *B, float *C, int rows_a,
   C[IDX_2D(gidy, gidx, cols_b)] = accum;
 }
 
+
+class TupleInt {
+  public:
+    int x;
+    int y;
+    __device__ __host__ inline TupleInt()
+    {
+        x = 0; y = 0;
+    }
+    __device__ __host__ inline TupleInt(const int& a, const int& b)
+    {
+        x = a; y = b;
+    }
+    __device__ __host__ inline TupleInt(const TupleInt& i2)
+    {
+        x = i2.x; y = i2.y;
+    }
+    volatile __device__ __host__ inline TupleInt& operator=(const TupleInt& i2) volatile
+    {
+        x = i2.x; y = i2.y;
+        return *this;
+    }
+};
+
+
+
+
+TupleInt map_fun(float val)
+{
+  int nan = isnan(val);
+  return TupleInt(!nan, nan);
+}
+
+TupleInt op(TupleInt a, TupleInt b)
+{
+  return TupleInt(a.x + b.x, a.y + b.y);
+}
+
+TupleInt scaninc_warp(volatile TupleInt *p)
+{
+  const unsigned int idx = threadIdx.x
+  const unsigned int lane = idx & 31;
+
+  // no synchronization needed inside a WARP,
+  //   i.e., SIMD execution
+  if (lane >= 1)  p[idx] = op(p[idx-1],  p[idx]);
+  if (lane >= 2)  p[idx] = op(p[idx-2],  p[idx]);
+  if (lane >= 4)  p[idx] = op(p[idx-4],  p[idx]);
+  if (lane >= 8)  p[idx] = op(p[idx-8],  p[idx]);
+  if (lane >= 16) p[idx] = op(p[idx-16], p[idx]);
+
+  return const_cast<T&>(p[idx]);
+}
+
+TupleInt scaninc_map_warp(volatile float *in, volatile TupleInt *p)
+{
+  const unsigned int idx = threadIdx.x
+  const unsigned int lane = idx & 31;
+
+  // no synchronization needed inside a WARP,
+  //   i.e., SIMD execution
+  if (lane >= 1)  p[idx] = op(map_fun(in[idx-1]),  map_fun(in[idx]));
+  if (lane >= 2)  p[idx] = op(map_fun(in[idx-2]),  map_fun(in[idx]));
+  if (lane >= 4)  p[idx] = op(map_fun(in[idx-4]),  map_fun(in[idx]));
+  if (lane >= 8)  p[idx] = op(map_fun(in[idx-8]),  map_fun(in[idx]));
+  if (lane >= 16) p[idx] = op(map_fun(in[idx-16]), map_fun(in[idx]));
+
+  return const_cast<T&>(p[idx]);
+}
+
+void scaninc_map_block(volatile float *in, volatile TupleInt *p)
+{
+  const unsigned int idx = threadIdx.x
+  const unsigned int lane = idx &  31;
+  const unsigned int warpid = idx >> 5;
+
+  TupleInt val = scaninc_map_warp<OP>(in, p);
+  __syncthreads();
+
+  if (lane == 31) { p[warpid] = val; }
+  __syncthreads();
+
+  if (warpid == 0) scaninc_warp(p);
+  __syncthreads();
+
+  if (warpid > 0) {
+      val = op(p[warpid-1], val);
+  }
+
+  __syncthreads();
+  p[idx] = val;
+}
+
+
 __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
 {
@@ -240,15 +334,15 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
   // Grid dimensions (x, y, z): (m, 1, 1)
   // Block dimensions (x, y, z ): (1024, 1, 1)
 
-  /*
   if (threadIdx.x >= N) { return; }
 
-  float *y = &images[blockIdx.x * gridDim.x];
-  float *y_pred = &y_preds[blockIdx.x * gridDim.x];
-  float *y_error = &y_errors[blockIdx.x * gridDim.x];
+  float *y = &images[blockIdx.x * N];
+  float *y_pred = &y_preds[blockIdx.x * N];
+  float *y_error = &y_errors[blockIdx.x * N];
+  float *val_inds = &val_indss[blockIdx.x * N];
+  int *Ns = &Nss[blockIdx.x];
+
   __shared__ float y_error_all[1024];
-  __shared__ int val_inds[1024];
-  //int *Ns = &Nss[blockIdx.x];
 
   float val = y[threadIdx.x];
   if (!isnan(val)) {
@@ -256,29 +350,108 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
   } else {
     y_error_all[threadIdx.x] = NAN;
   }
-  */
+  __syncthreads();
 
-  /*
-     //  horribelt
-  if (threadIdx.x == 0) {
-    // blabla
-    float *py = y_error;
-    int *pi = val_inds;
-    int ns = 0;
-    for (int i = 0; i < N; i++) {
-      float val = y_error_all[i];
-      if (!isnan(val)) {
-        *py = val;
-        *pi = i;
-        py++;
-        pi++;
-      } else {
-        
-      }
-    }
+
+  //  Partition
+  __shared__ TupleInt scan_res[1024];
+  scaninc_map_block(y_error_all, scan_res);
+  int i = scan_res[N - 1].x;
+
+  __syncthreads();
+
+  if (!isnan(y_error_all[threadIdx.x])) {
+    unsigned int idx = scan_res[threadIdx.x].x - 1;
+    y_error[idx] = y_error_all[threadIdx.x];
+    val_inds[idx] = threadIdx.x;
+  } else {
+    unsigned int idx = scan_res[threadIdx.x].y - 1 + i;
+    y_error[idx] = y_error_all[threadIdx.x];
+    val_inds[idx] = threadIdx.x;
   }
-  */
 
+  if (threadIdx.x == 0) {
+    *Ns = i;
+  }
+}
+
+
+float op2(float a, float b) { return a + b; }
+
+float scaninc_warp_op2(volatile float *in, volatile float *p)
+{
+  const unsigned int idx = threadIdx.x
+  const unsigned int lane = idx & 31;
+
+  // no synchronization needed inside a WARP,
+  //   i.e., SIMD execution
+  if (lane >= 1)  p[idx] = op(in[idx-1],  in[idx]);
+  if (lane >= 2)  p[idx] = op(in[idx-2],  in[idx]);
+  if (lane >= 4)  p[idx] = op(in[idx-4],  in[idx]);
+  if (lane >= 8)  p[idx] = op(in[idx-8],  in[idx]);
+  if (lane >= 16) p[idx] = op(in[idx-16], in[idx]);
+
+  return p[idx];
+}
+
+void scaninc_block_op2(volatile float *in, volatile float *p)
+{
+  const unsigned int idx = threadIdx.x
+  const unsigned int lane = idx &  31;
+  const unsigned int warpid = idx >> 5;
+
+  float val = scaninc_map_warp(in, p);
+  __syncthreads();
+
+  if (lane == 31) { p[warpid] = val; }
+  __syncthreads();
+
+  if (warpid == 0) { scaninc_warp(p); }
+  __syncthreads();
+
+  if (warpid > 0) {
+      val = op(p[warpid-1], val);
+  }
+
+  __syncthreads();
+  p[idx] = val;
+}
+
+__global__ void step_6_kernel(float *Yh, float *y_errors,
+    float *nss, float *sigmas,
+    int m, int n, int N, int k2p2)
+{
+  // Grid dimensions (x, y, z): (m, 1, 1)
+  // Block dimensions (x, y, z ): (1024, 1, 1)
+
+
+  if (threadIdx.x >= N) { return; }
+
+  float *yh = &Yh[blockIdx.x * N]; // remember that Yh is m by N in memory (it's technically Y)
+  float *y_error = &y_errors[blockIdx.x * N];
+
+  __shared__ TupleInt scan_res[1024];
+  if (threadIdx.x < n) {
+    scaninc_map_block(yh, scan_res);
+  }
+
+  int ns = scan_res[n - 1].x;
+
+  __shared__ float scan_me[1024];
+  __shared__ float scan_res_2[1024];
+  if (threadIdx.x < ns) {
+    float val = y_error[threadIdx.x];
+    scan_me[threadIdx.x] = val * val;
+    scaninc_block_op2(scan_me, scan_res_2);
+  }
+
+  if (threadIdx.x == 0) {
+    float sigma0 = scan_res_2[ns - 1];
+    float sigma = sqrt(sigma / ((float)(ns-k2p2)));
+
+    nss[blockIdx.x] = ns;
+    sigmas[blockIdx.x] = sigma;
+  }
 }
 
 extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
@@ -360,30 +533,72 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
 
   // (k2p2 by n) times (n by m) is (k2p2 by m)
-  float *d_beta0;
-  const size_t mem_beta0 = k2p2 * m * sizeof(float);
+  float *d_beta0t; // k2p2 by m
+  const size_t mem_beta0t = k2p2 * m * sizeof(float);
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_beta0t, mem_beta0t));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(m, block.x),
+              CEIL_DIV(k2p2, block.y),
+              1);
+    matmat_mul_filt<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m);
+  }
+
+  float *d_beta0; // m by k2p2
+  const size_t mem_beta0 = mem_beta0t;
   {
     CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
     dim3 block(16, 16, 1);
     dim3 grid(CEIL_DIV(m, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    matmat_mul_filt<<<grid, block>>>(d_X, d_Yt, d_beta0, k2p2, n, m);
+    mat_transpose<<<grid, block>>>(d_beta0t, d_beta0, k2p2, m);
   }
 
 
-  //float *d_beta;
-  //const size_t mem_beta = 
-  //{
+  float *d_beta; // m by k2p2
+  const size_t mem_beta = mem_beta0;
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
+    dim3 block(16, 1, 1);
+    dim3 grid(CEIL_DIV(k2p2, block.x),
+              CEIL_DIV(m, block.y),
+              1);
+    block_matvecmul<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
+  }
 
-  //}
+
+  float *d_y_preds; // m by N
+  const size_t mem_y_preds = m * N * sizeof(float);
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(N, block.x),
+              CEIL_DIV(m, block.y),
+              1);
+    matmat_mul<<<grid, block>>>(d_Xt, d_betat, d_y_preds, N, k2p2, m);
+  }
+
+
+  int *d_Nss, *d_val_indss;
+  float *d_y_errors;
+  const size_t mem_Nss = m * sizeof(int);
+  const size_t mem_y_errors = m * N * sizeof(float);
+  const size_t mem_val_indss = m * N * sizeof(int);
+  {
+    CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
+    CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
+    CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
+    dim3 block(1024, 1, 1);
+    dim3 grid(m, 1, 1);
+    step_5_kernel<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
+        d_val_indss, N);
+  }
 
 
 
-  // Step 1: mk_X, mat_transpose
-  // Step 2: block_matmat_filt
-  // Step 3: block_mat_inv
-  // Step 4: transpose (for Yth), matmat_mul_filt, block_matvecmul, matmat_mul
+
+
 
 
   // Step 5: kernel for map body. blocksize=N
