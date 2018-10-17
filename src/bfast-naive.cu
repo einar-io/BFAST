@@ -2,12 +2,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include "bfast.h"
-//#include "bfast-helpers.cu.h"
-
-#define CUDA_SUCCEED(x) (assert((x) == cudaSuccess))
-
-#define IDX_2D(__r,__c,__nc) ((__r) * (__nc) + (__c))
-#define CEIL_DIV(a,b) (((a) + (b) - 1) / (b))
+#include "bfast-helpers.cu.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -439,7 +434,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     dim3 grid(CEIL_DIV(N, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    mat_transpose<<<grid, block>>>(d_X, d_Xt, k2p2, N);
+    transpose_kernel<<<grid, block>>>(d_X, d_Xt, k2p2, N);
   }
 
 
@@ -472,7 +467,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     dim3 grid(CEIL_DIV(N, block.x),
               CEIL_DIV(m, block.y),
               1);
-    mat_transpose<<<grid, block>>>(d_Y, d_Yt, m, N);
+    transpose_kernel<<<grid, block>>>(d_Y, d_Yt, m, N);
   }
 
 
@@ -496,7 +491,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     dim3 grid(CEIL_DIV(m, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    mat_transpose<<<grid, block>>>(d_beta0t, d_beta0, k2p2, m);
+    transpose_kernel<<<grid, block>>>(d_beta0t, d_beta0, k2p2, m);
   }
 
 
