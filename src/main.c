@@ -136,7 +136,7 @@ void bfast_3()
   BFAST_ASSERT(Xsqr_shp[1] == Xsqr_shp[2]); // k2p2
   m = Xsqr_shp[0];
   k2p2 = Xsqr_shp[1];
-  fprintf(stderr, "m=%d, k2p2=%d\n", m, k2p2); // XXX
+  fprintf(out, "m=%d, k2p2=%d\n", m, k2p2);
 
   float *Xinv = NULL;
   bfast_step_3_single(Xsqr, &Xinv, k2p2, m);
