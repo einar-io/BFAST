@@ -11,26 +11,42 @@
 
 __global__ void bfast_step_1(float *X, int32_t k2p2, int32_t N, float f)
 {
-  int i = blockIdx.y * blockDim.y + threadIdx.y;
-  int j = blockIdx.x * blockDim.x + threadIdx.x;
+  int gidy = blockIdx.y * blockDim.y + threadIdx.y;
+  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (i >= k2p2 || j >= N) {
+  if (gidy >= k2p2 || gidx >= N) {
     return;
   }
 
+  int i = gidy;
+  int j = gidx + 1;
   float val;
   if (i == 0) { val = 1.0; }
   else if (i == 1) { val = (float)j; }
   else {
     float angle = 2.0 * M_PI * (float)(i / 2) * (float)j / f;
     if (i % 2 == 0) {
-      val = sin(angle);
+      val = __sinf(angle);
     } else {
-      val = cos(angle);
+      val = __cosf(angle);
     }
   }
 
-  X[IDX_2D(i, j, N)] = val;
+  X[IDX_2D(gidy, gidx, N)] = val;
+}
+
+extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
+{
+  float *d_X;
+  const size_t mem_X = k2p2 * N * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
+  dim3 block(16, 16, 1);
+  dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
+  bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
+
+  *X = (float *)malloc(mem_X);
+  CUDA_SUCCEED(cudaMemcpy(*X, d_X, mem_X, cudaMemcpyDeviceToHost));
 }
 
 /*
@@ -452,5 +468,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
         d_val_indss, N);
   }
+
 }
 */
+

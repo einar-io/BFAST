@@ -9,6 +9,7 @@
 #include "bfast.h"
 
 extern void bfast_naive(struct bfast_in *in, struct bfast_out  *out);
+extern void bfast_step_1_single(float **X, int k2p2, int N, float f);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -36,45 +37,62 @@ void write_bfast_outputs(struct bfast_out *outp)
   printf("\n");
 }
 
-// For testing with tests/sanity.fut
-void write_sanity_outputs(struct bfast_in *inp)
-{
-  write_scalar(stdout, 0, &i32_info, &inp->k); printf("\n");
-  write_scalar(stdout, 0, &i32_info, &inp->n); printf("\n");
-  write_scalar(stdout, 0, &f32_info, &inp->freq); printf("\n");
-  write_scalar(stdout, 0, &f32_info, &inp->hfrac); printf("\n");
-  write_scalar(stdout, 0, &f32_info, &inp->lam); printf("\n");
-  write_scalar(stdout, 0, &i64_info, &inp->shp[0]); printf("\n");
-  write_scalar(stdout, 0, &i64_info, &inp->shp[1]); printf("\n");
-}
-
-void bfast()
-{
-  BFAST_ASSERT(0);
-  //struct bfast_in input;
-  //struct bfast_out output;
-
-  //memset(&input, 0, sizeof(struct bfast_in));
-  //memset(&output, 0, sizeof(struct bfast_out));
-
-  //read_bfast_input(&input);
-  //bfast_naive(&input, &output);
-  //write_outputs(&output);
-
-  //free(input.images);
-
-  //if (output.breaks != NULL) {
-  //  free(output.breaks);
-  //}
-}
-
 void sanity()
 {
   // Entry point for testing our test system
   struct bfast_in input;
   memset(&input, 0, sizeof(struct bfast_in));
+
   read_bfast_input(&input);
-  write_sanity_outputs(&input);
+
+  write_scalar(stdout, 1, &i32_info, &input.k); printf("\n");
+  write_scalar(stdout, 1, &i32_info, &input.n); printf("\n");
+  write_scalar(stdout, 1, &f32_info, &input.freq); printf("\n");
+  write_scalar(stdout, 1, &f32_info, &input.hfrac); printf("\n");
+  write_scalar(stdout, 1, &f32_info, &input.lam); printf("\n");
+  write_scalar(stdout, 1, &i64_info, &input.shp[0]); printf("\n");
+  write_scalar(stdout, 1, &i64_info, &input.shp[1]); printf("\n");
+
+  free(input.images);
+}
+
+void bfast()
+{
+  panic(-1, "unimplemented\n");
+  /*
+  struct bfast_in input;
+  struct bfast_out output;
+
+  memset(&input, 0, sizeof(struct bfast_in));
+  memset(&output, 0, sizeof(struct bfast_out));
+
+  read_bfast_input(&input);
+  bfast_naive(&input, &output);
+  write_outputs(&output);
+
+  free(input.images);
+
+  if (output.breaks != NULL) {
+    free(output.breaks);
+  }
+  */
+}
+
+void bfast_1()
+{
+  int k2p2, N;
+  float f, *X = NULL;
+  BFAST_ASSERT(read_scalar(&i32_info, &k2p2) == 0);
+  BFAST_ASSERT(read_scalar(&i32_info, &N) == 0);
+  BFAST_ASSERT(read_scalar(&f32_info, &f) == 0);
+
+  fprintf(out, "k2p2=%d, N=%d, f=%f\n", k2p2, N, f);
+
+  bfast_step_1_single(&X, k2p2, N, f);
+
+  int64_t shape[2] = { k2p2, N };
+  write_array(stdout, 1, &f32_info, X, shape, 2);
+  free(X);
 }
 
 int run_entry(const char *entry)
@@ -83,8 +101,9 @@ int run_entry(const char *entry)
     const char *name;
     void (*f)(void);
   } static const entries[] = {
+    { "sanity", sanity },
     { "bfast", bfast },
-    { "sanity", sanity }
+    { "bfast-1", bfast_1 }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {
@@ -99,8 +118,8 @@ int run_entry(const char *entry)
 
 int main(int argc, const char **argv)
 {
-  fprintf(stderr, "panic.h, values.h: "
-      "Copyright (c) 2013-2018. DIKU, University of Copenhagen\n");
+  //fprintf(stderr, "panic.h, values.h: "
+  //    "Copyright (c) 2013-2018. DIKU, University of Copenhagen\n");
 
   const char *entry = NULL;
   const char *out_file = NULL;
