@@ -2,13 +2,14 @@
 #include <stdint.h>
 #include <assert.h>
 #include "bfast.h"
+#include "bfast-helpers.cu.h"
 
 #define CUDA_SUCCEED(x) (assert((x) == cudaSuccess))
 
 #define IDX_2D(__r,__c,__nc) ((__r) * (__nc) + (__c))
 #define CEIL_DIV(a,b) (((a) + (b) - 1) / (b))
 
-__global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
+__global__ void bfast_step_1(float *X, int32_t k2p2, int32_t N, float f)
 {
   int i = blockIdx.y * blockDim.y + threadIdx.y;
   int j = blockIdx.x * blockDim.x + threadIdx.x;
@@ -21,7 +22,7 @@ __global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
   if (i == 0) { val = 1.0; }
   else if (i == 1) { val = (float)j; }
   else {
-    float angle = 2.0 * M_PI * (float)(i/2) * (float)j / f;
+    float angle = 2.0 * M_PI * (float)(i / 2) * (float)j / f;
     if (i % 2 == 0) {
       val = sin(angle);
     } else {
@@ -32,27 +33,15 @@ __global__ void mk_X(float *X, int32_t k2p2, int32_t N, float f)
   X[IDX_2D(i, j, N)] = val;
 }
 
-__global__ void mat_transpose(float *A, float *B, int heightA, int widthA)
+__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
+    int k2p2, int n)
 {
-
-  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
-  int gidy = blockIdx.y * blockDim.y + threadIdx.y;
-
-  if(gidx >= widthA || gidy >= heightA) {
-    return;
-  }
-
-  B[IDX_2D(gidx, gidy, heightA)] = A[IDX_2D(gidy, gidx, widthA)];
-}
-
-__global__ void block_matmat_filt(float *Xh, float *Xth, float *Yh,
-    float *Xsqr, int k2p2, int n)
-{
+  // block_matmat_filt
   // notation in the following 4 lines: __ is row by col
   // Xh is k2p2 by n
   // Xth is n by k2p2
   // Yh is m by n     (m is gridDim.x)
-  // Xsqr is k2p2 by k2p2
+  // Xsqr is a list of m matrices that are k2p2 by k2p2
 
   // Grid dimensions are (m, 1, 1)
   // Block dimensions are (k2p2, k2p2, 1)
@@ -75,8 +64,9 @@ __global__ void block_matmat_filt(float *Xh, float *Xth, float *Yh,
   out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
 }
 
-__global__ void block_mat_inv(float *Xsqr, float *Xinv, int k2p2)
+__global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
 {
+  // block_mat_inv
   // m is gridDim.x
   // Xsqr shape: (m, k2p2, k2p2)
   // Xinv shape: (m, k2p2, k2p2)
@@ -85,7 +75,7 @@ __global__ void block_mat_inv(float *Xsqr, float *Xinv, int k2p2)
   // Block dimensions (x,y,z): (2*k2p2, k2p2, 1)
 
   // When calling this kernel, remember to allocate dynamic shared memory:
-  // block_mat_inv<<<blah, blah, k2p2*2*k2p2>>>(bla)
+  // bfast_step_3<<<blah, blah, k2p2*2*k2p2>>>(bla)
 
   if (threadIdx.x >= 2*k2p2 || threadIdx.y >= k2p2) {
     return;
@@ -130,9 +120,10 @@ __global__ void block_mat_inv(float *Xsqr, float *Xinv, int k2p2)
   }
 }
 
-__global__ void matmat_mul_filt(float *A, float *B, float *C, int rows_a,
+__global__ void bfast_step_4a(float *A, float *B, float *C, int rows_a,
     int cols_a, int cols_b)
 {
+  // matmat_mul_filt
   // When called in calculation of beta0 in bfast-distrib.fut:
   //    A (Xh) is k2p2 by n
   //    B (Yth) is n by m     (m is gridDim.x)
@@ -158,9 +149,10 @@ __global__ void matmat_mul_filt(float *A, float *B, float *C, int rows_a,
   C[IDX_2D(gidy, gidx, cols_b)] = accum;
 }
 
-__global__ void block_matvecmul(float *Xinv, float *beta0, float *beta, int k2p2)
+__global__ void bfast_step_4b(float *Xinv, float *beta0, float *beta, int k2p2)
 {
-  // The C output from matmat_mul_filt is as follows
+  // block_matvecmul
+  // The C output from bfast_step_4a is as follows
   //   C =
   //     [
   //       [c_11, c_12, ..., c_1m], -- 1
@@ -198,9 +190,10 @@ __global__ void block_matvecmul(float *Xinv, float *beta0, float *beta, int k2p2
   beta[IDX_2D(threadIdx.x, blockIdx.x, blockDim.x)] = accum;
 }
 
-__global__ void matmat_mul(float *A, float *B, float *C, int rows_a,
+__global__ void bfast_step_4c(float *A, float *B, float *C, int rows_a,
     int cols_a, int cols_b)
 {
+  // matmat_mul
   // When called in calculation of y_preds in bfast-distrib.fut:
   //    A (Xt) is N by k2p2
   //    B (beta) is k2p2 by m
@@ -224,101 +217,7 @@ __global__ void matmat_mul(float *A, float *B, float *C, int rows_a,
   C[IDX_2D(gidy, gidx, cols_b)] = accum;
 }
 
-
-class TupleInt {
-  public:
-    int x;
-    int y;
-    __device__ __host__ inline TupleInt()
-    {
-        x = 0; y = 0;
-    }
-    __device__ __host__ inline TupleInt(const int& a, const int& b)
-    {
-        x = a; y = b;
-    }
-    __device__ __host__ inline TupleInt(const TupleInt& i2)
-    {
-        x = i2.x; y = i2.y;
-    }
-    volatile __device__ __host__ inline TupleInt& operator=(const TupleInt& i2) volatile
-    {
-        x = i2.x; y = i2.y;
-        return *this;
-    }
-};
-
-
-
-
-TupleInt map_fun(float val)
-{
-  int nan = isnan(val);
-  return TupleInt(!nan, nan);
-}
-
-TupleInt op(TupleInt a, TupleInt b)
-{
-  return TupleInt(a.x + b.x, a.y + b.y);
-}
-
-TupleInt scaninc_warp(volatile TupleInt *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx & 31;
-
-  // no synchronization needed inside a WARP,
-  //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(p[idx-1],  p[idx]);
-  if (lane >= 2)  p[idx] = op(p[idx-2],  p[idx]);
-  if (lane >= 4)  p[idx] = op(p[idx-4],  p[idx]);
-  if (lane >= 8)  p[idx] = op(p[idx-8],  p[idx]);
-  if (lane >= 16) p[idx] = op(p[idx-16], p[idx]);
-
-  return const_cast<T&>(p[idx]);
-}
-
-TupleInt scaninc_map_warp(volatile float *in, volatile TupleInt *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx & 31;
-
-  // no synchronization needed inside a WARP,
-  //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(map_fun(in[idx-1]),  map_fun(in[idx]));
-  if (lane >= 2)  p[idx] = op(map_fun(in[idx-2]),  map_fun(in[idx]));
-  if (lane >= 4)  p[idx] = op(map_fun(in[idx-4]),  map_fun(in[idx]));
-  if (lane >= 8)  p[idx] = op(map_fun(in[idx-8]),  map_fun(in[idx]));
-  if (lane >= 16) p[idx] = op(map_fun(in[idx-16]), map_fun(in[idx]));
-
-  return const_cast<T&>(p[idx]);
-}
-
-void scaninc_map_block(volatile float *in, volatile TupleInt *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx &  31;
-  const unsigned int warpid = idx >> 5;
-
-  TupleInt val = scaninc_map_warp<OP>(in, p);
-  __syncthreads();
-
-  if (lane == 31) { p[warpid] = val; }
-  __syncthreads();
-
-  if (warpid == 0) scaninc_warp(p);
-  __syncthreads();
-
-  if (warpid > 0) {
-      val = op(p[warpid-1], val);
-  }
-
-  __syncthreads();
-  p[idx] = val;
-}
-
-
-__global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
+__global__ void bfast_step_5(float *images, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
 {
   // images is m by N
@@ -375,51 +274,8 @@ __global__ void step_5_kernel(float *images, float *y_preds, int *Nss,
   }
 }
 
-
-float op2(float a, float b) { return a + b; }
-
-float scaninc_warp_op2(volatile float *in, volatile float *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx & 31;
-
-  // no synchronization needed inside a WARP,
-  //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(in[idx-1],  in[idx]);
-  if (lane >= 2)  p[idx] = op(in[idx-2],  in[idx]);
-  if (lane >= 4)  p[idx] = op(in[idx-4],  in[idx]);
-  if (lane >= 8)  p[idx] = op(in[idx-8],  in[idx]);
-  if (lane >= 16) p[idx] = op(in[idx-16], in[idx]);
-
-  return p[idx];
-}
-
-void scaninc_block_op2(volatile float *in, volatile float *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx &  31;
-  const unsigned int warpid = idx >> 5;
-
-  float val = scaninc_map_warp(in, p);
-  __syncthreads();
-
-  if (lane == 31) { p[warpid] = val; }
-  __syncthreads();
-
-  if (warpid == 0) { scaninc_warp(p); }
-  __syncthreads();
-
-  if (warpid > 0) {
-      val = op(p[warpid-1], val);
-  }
-
-  __syncthreads();
-  p[idx] = val;
-}
-
-__global__ void step_6_kernel(float *Yh, float *y_errors,
-    float *nss, float *sigmas,
-    int m, int n, int N, int k2p2)
+__global__ void bfast_step_6(float *Yh, float *y_errors, float *nss,
+    float *sigmas, int m, int n, int N, int k2p2)
 {
   // Grid dimensions (x, y, z): (m, 1, 1)
   // Block dimensions (x, y, z ): (1024, 1, 1)
@@ -454,7 +310,8 @@ __global__ void step_6_kernel(float *Yh, float *y_errors,
   }
 }
 
-extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
+extern "C" void bfast_step_naive(struct bfast_step_in *in,
+    struct bfast_step_out *out)
 {
   int k = in->k;
   int n = in->n;
@@ -465,8 +322,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   const int m = in->shp[0];
   const int N = in->shp[1];
 
-
-  int k2p2 = k*2+2;
+  int k2p2 = k * 2 + 2;
 
 
   float *d_Y; // m by N
@@ -483,7 +339,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 grid(CEIL_DIV(N, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    mk_X<<<grid, block>>>(d_X, k2p2, N, freq);
+    bfast_step_1<<<grid, block>>>(d_X, k2p2, N, freq);
   }
 
 
@@ -505,7 +361,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
     dim3 block(8, 8, 1);
     dim3 grid(m, 1, 1);
-    block_matmat_filt<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, k2p2, n);
+    bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, k2p2, n);
   }
 
 
@@ -516,7 +372,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 block(16, 8, 1);
     dim3 grid(m, 1, 1);
     const size_t shared_size = k2p2 * 2 * k2p2;
-    block_mat_inv<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
+    bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
   }
 
 
@@ -541,7 +397,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 grid(CEIL_DIV(m, block.x),
               CEIL_DIV(k2p2, block.y),
               1);
-    matmat_mul_filt<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m);
+    bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m);
   }
 
   float *d_beta0; // m by k2p2
@@ -564,7 +420,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 grid(CEIL_DIV(k2p2, block.x),
               CEIL_DIV(m, block.y),
               1);
-    block_matvecmul<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
+    bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
   }
 
 
@@ -576,7 +432,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     dim3 grid(CEIL_DIV(N, block.x),
               CEIL_DIV(m, block.y),
               1);
-    matmat_mul<<<grid, block>>>(d_Xt, d_betat, d_y_preds, N, k2p2, m);
+    bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_preds, N, k2p2, m);
   }
 
 
@@ -591,31 +447,12 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
     dim3 block(1024, 1, 1);
     dim3 grid(m, 1, 1);
-    step_5_kernel<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
+    bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
         d_val_indss, N);
   }
 
 
 
-
-
-
-
-  // Step 5: kernel for map body. blocksize=N
-
-
-  // Step 6: kernel for map body. blocksize=n
-  // Step 7: kernel for map body, kernel for map body
-  // Step 8: kernel or map body, possibly scan
-
-
-
-
-  out->breaks = NULL;
-  out->shp[0] = 0;
-  out->shp[1] = 0;
-
-  //
 
 }
 
