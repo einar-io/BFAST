@@ -14,5 +14,10 @@
 -- compiled input @ ../../data/sahara-1.in.gz
 -- output @ ../../data/sahara-1.out.gz
 
+-- ==
+-- entry: bfast-2
+-- compiled input @ ../../data/sahara-2.in.gz
+-- output @ ../../data/sahara-2.out.gz
+
 
 

@@ -58,31 +58,35 @@ extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
   CUDA_SUCCEED(cudaFree(d_X));
 }
 
-/*
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 2: Calculating Xsqr
+//
+// Input:
+//   X:    [k2p2][N]f32    (only using slice: [k2p2][n])
+//   Xt:   [N][k2p2]f32    (only using slice: [n][k2p2])
+//   Y:    [m][N]f32       (only using slice: [m][n])
+// Output:
+//   Xsqr: [m][k2p2][k2p2]f32
+//
 
 __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
-    int k2p2, int n)
+    int N, int n, int k2p2)
 {
-  // block_matmat_filt
-  // notation in the following 4 lines: __ is row by col
-  // Xh is k2p2 by n
-  // Xth is n by k2p2
-  // Yh is m by n     (m is gridDim.x)
-  // Xsqr is a list of m matrices that are k2p2 by k2p2
+  // Grid: (m, 1, 1)
+  // Block: (k2p2, k2p2, 1)
 
-  // Grid dimensions are (m, 1, 1)
-  // Block dimensions are (k2p2, k2p2, 1)
-
-  float *yh = &Yh[blockIdx.x * n];
+  float *yh = &Yh[blockIdx.x * N];
   float accum = 0.0;
 
-  if (threadIdx.y >= n || threadIdx.x >= k2p2) {
+  if (threadIdx.y >= k2p2 || threadIdx.x >= k2p2) {
     return;
   }
 
   for (int k = 0; k < n; k++) {
     if (!isnan(yh[k])) {
-      accum += Xh[IDX_2D(threadIdx.y, k, n)] *
+      accum += Xh[IDX_2D(threadIdx.y, k, N)] *
                  Xth[IDX_2D(k, threadIdx.x, k2p2)];
     }
   }
@@ -90,6 +94,39 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
   float *out_mat = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
   out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
 }
+
+extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
+    float **Xsqr, int N, int n, int k2p2, int m)
+{
+  float *d_X = NULL, *d_Xt = NULL, *d_Y = NULL, *d_Xsqr = NULL;
+  const size_t mem_X = k2p2 * N * sizeof(float);
+  const size_t mem_Y = m * N * sizeof(float);
+  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
+  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_X));
+  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
+
+  CUDA_SUCCEED(cudaMemcpy(d_X, X, mem_X, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_X, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
+
+  dim3 block(8, 8, 1); // Assumes k2p2 <= 8
+  dim3 grid(m, 1, 1);
+  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+
+  *Xsqr = (float *)malloc(mem_Xsqr);
+  CUDA_SUCCEED(cudaMemcpy(*Xsqr, d_Xsqr, mem_Xsqr, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_X));
+  CUDA_SUCCEED(cudaFree(d_Xt));
+  CUDA_SUCCEED(cudaFree(d_Y));
+  CUDA_SUCCEED(cudaFree(d_Xsqr));
+}
+
+
+/*
 
 __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
 {
@@ -388,7 +425,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
     dim3 block(8, 8, 1);
     dim3 grid(m, 1, 1);
-    bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, k2p2, n);
+    bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
   }
 
 
