@@ -13,6 +13,8 @@ extern void bfast_step_1_single(float **X, int k2p2, int N, float f);
 extern void bfast_step_2_single(float *X, float *Xt, float *Y, float **Xsqr,
     int N, int n, int k2p2, int m);
 extern void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m);
+extern void bfast_step_4a_single(float *X, float *Y, float **beta0, int k2p2,
+    int n, int m, int N);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -148,6 +150,31 @@ void bfast_3()
   free(Xsqr);
 }
 
+void bfast_4a()
+{
+  int n, k2p2, N, m;
+  float *X = NULL, *Y = NULL;
+  int64_t X_shp[2], Y_shp[2];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&X, X_shp,  2) == 0);
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Y, Y_shp,  2) == 0);
+  BFAST_ASSERT(read_scalar(&i32_info, &n) == 0);
+  BFAST_ASSERT(X_shp[1] == Y_shp[1]); // N
+  k2p2 = X_shp[0];
+  N = X_shp[1];
+  m = Y_shp[0];
+  fprintf(out, "n=%d, k2p2=%d, N=%d, m=%d\n", n, k2p2, N, m);
+
+  float *beta0 = NULL;
+  bfast_step_4a_single(X, Y, &beta0, k2p2, n, m, N);
+
+  int64_t beta0_shp[2] = { m, k2p2 };
+  write_array(stdout, 1, &f32_info, beta0, beta0_shp, 2);
+
+  free(X);
+  free(Y);
+  free(beta0);
+}
+
 int run_entry(const char *entry)
 {
   struct {
@@ -158,7 +185,8 @@ int run_entry(const char *entry)
     { "bfast", bfast },
     { "bfast-1", bfast_1 },
     { "bfast-2", bfast_2 },
-    { "bfast-3", bfast_3 }
+    { "bfast-3", bfast_3 },
+    { "bfast-4a", bfast_4a }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {

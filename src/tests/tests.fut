@@ -29,5 +29,9 @@
 -- compiled input { [[[ 1.0f32, 2.0f32 ], [3.0f32, 4.0f32]]] }
 -- output { [[[-2.0f32, 1.0f32], [1.5f32, -0.5f32]]] }
 
+-- ==
+-- entry: bfast-4a
+-- compiled input @ ../../data/sahara-4a.in.gz
+-- output @ ../../data/sahara-4a.out.gz
 
 
