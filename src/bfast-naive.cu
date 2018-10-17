@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include "bfast.h"
-#include "bfast-helpers.cu.h"
+//#include "bfast-helpers.cu.h"
 
 #define CUDA_SUCCEED(x) (assert((x) == cudaSuccess))
 
@@ -32,6 +32,8 @@ __global__ void bfast_step_1(float *X, int32_t k2p2, int32_t N, float f)
 
   X[IDX_2D(i, j, N)] = val;
 }
+
+/*
 
 __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
     int k2p2, int n)
@@ -450,9 +452,5 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
         d_val_indss, N);
   }
-
-
-
-
 }
-
+*/
