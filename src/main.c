@@ -81,17 +81,17 @@ void bfast()
 void bfast_1()
 {
   int k2p2, N;
-  float f, *X = NULL;
+  float f;
   BFAST_ASSERT(read_scalar(&i32_info, &k2p2) == 0);
   BFAST_ASSERT(read_scalar(&i32_info, &N) == 0);
   BFAST_ASSERT(read_scalar(&f32_info, &f) == 0);
-
   fprintf(out, "k2p2=%d, N=%d, f=%f\n", k2p2, N, f);
 
+  float *X = NULL;
   bfast_step_1_single(&X, k2p2, N, f);
 
-  int64_t shape[2] = { k2p2, N };
-  write_array(stdout, 1, &f32_info, X, shape, 2);
+  int64_t shp[2] = { k2p2, N };
+  write_array(stdout, 1, &f32_info, X, shp, 2);
   free(X);
 }
 

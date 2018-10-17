@@ -9,7 +9,15 @@
 #define IDX_2D(__r,__c,__nc) ((__r) * (__nc) + (__c))
 #define CEIL_DIV(a,b) (((a) + (b) - 1) / (b))
 
-__global__ void bfast_step_1(float *X, int32_t k2p2, int32_t N, float f)
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 1: Generating X
+//
+// Output:
+//   X: [k2p2][N]f32
+
+__global__ void bfast_step_1(float *X, int k2p2, int N, float f)
 {
   int gidy = blockIdx.y * blockDim.y + threadIdx.y;
   int gidx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -47,6 +55,7 @@ extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
 
   *X = (float *)malloc(mem_X);
   CUDA_SUCCEED(cudaMemcpy(*X, d_X, mem_X, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaFree(d_X));
 }
 
 /*
