@@ -12,6 +12,7 @@ extern void bfast_naive(struct bfast_in *in, struct bfast_out  *out);
 extern void bfast_step_1_single(float **X, int k2p2, int N, float f);
 extern void bfast_step_2_single(float *X, float *Xt, float *Y, float **Xsqr,
     int N, int n, int k2p2, int m);
+extern void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -126,6 +127,27 @@ void bfast_2()
   free(Xsqr);
 }
 
+void bfast_3()
+{
+  int m, k2p2;
+  float *Xsqr = NULL;
+  int64_t Xsqr_shp[3];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Xsqr, Xsqr_shp, 3) == 0);
+  BFAST_ASSERT(Xsqr_shp[1] == Xsqr_shp[2]); // k2p2
+  m = Xsqr_shp[0];
+  k2p2 = Xsqr_shp[1];
+  fprintf(stderr, "m=%d, k2p2=%d\n", m, k2p2); // XXX
+
+  float *Xinv = NULL;
+  bfast_step_3_single(Xsqr, &Xinv, k2p2, m);
+
+  int64_t Xinv_shp[3] = { m, k2p2, k2p2 };
+  write_array(stdout, 1, &f32_info, Xinv, Xinv_shp, 3);
+
+  free(Xinv);
+  free(Xsqr);
+}
+
 int run_entry(const char *entry)
 {
   struct {
@@ -135,7 +157,8 @@ int run_entry(const char *entry)
     { "sanity", sanity },
     { "bfast", bfast },
     { "bfast-1", bfast_1 },
-    { "bfast-2", bfast_2 }
+    { "bfast-2", bfast_2 },
+    { "bfast-3", bfast_3 }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {

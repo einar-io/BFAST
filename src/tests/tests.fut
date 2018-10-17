@@ -19,5 +19,15 @@
 -- compiled input @ ../../data/sahara-2.in.gz
 -- output @ ../../data/sahara-2.out.gz
 
+-- ==
+-- entry: bfast-3
+-- compiled input @ ../../data/sahara-3.in.gz
+-- output @ ../../data/sahara-3.out.gz
+
+-- ==
+-- entry: bfast-3
+-- compiled input { [[[ 1.0f32, 2.0f32 ], [3.0f32, 4.0f32]]] }
+-- output { [[[-2.0f32, 1.0f32], [1.5f32, -0.5f32]]] }
+
 
 

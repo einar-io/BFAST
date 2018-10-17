@@ -125,21 +125,22 @@ extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
   CUDA_SUCCEED(cudaFree(d_Xsqr));
 }
 
-
-/*
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 3: Calculating Xinv
+//
+// Input:
+//   Xsqr: [m][k2p2][k2p2]f32
+// Output:
+//   Xinv: [m][k2p2][k2p2]f32
+//
 
 __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
 {
-  // block_mat_inv
-  // m is gridDim.x
-  // Xsqr shape: (m, k2p2, k2p2)
-  // Xinv shape: (m, k2p2, k2p2)
-
-  // Grid dimensions (x,y,z): (m, 1, 1)
-  // Block dimensions (x,y,z): (2*k2p2, k2p2, 1)
-
-  // When calling this kernel, remember to allocate dynamic shared memory:
-  // bfast_step_3<<<blah, blah, k2p2*2*k2p2>>>(bla)
+  // Grid: (m, 1, 1)
+  // Block: (2*k2p2, k2p2, 1)
+  // NB! Uses dynamically allocated shared memory: k2p2*2*k2p2 floats per block
 
   if (threadIdx.x >= 2*k2p2 || threadIdx.y >= k2p2) {
     return;
@@ -148,7 +149,7 @@ __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
   float *sqr = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
   float *inv = &Xinv[blockIdx.x * (k2p2 * k2p2)];
 
-  extern __shared__ float A[]; // shape k2p2 by 2*k2p2
+  extern __shared__ float A[]; // [k2p2][2*k2p2]
 
   // Body of mat_inv map
   if (threadIdx.x < k2p2) {
@@ -162,7 +163,7 @@ __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
   }
   __syncthreads();
 
-  // Body of guass_jordan map
+  // guass_jordan loop and map body
   for (int i = 0; i < k2p2; i++) {
     float v1 = A[i];
     float x = A[threadIdx.x] / v1;
@@ -183,6 +184,29 @@ __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
       A[IDX_2D(threadIdx.y, threadIdx.x + k2p2, 2*k2p2)];
   }
 }
+
+extern "C" void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m)
+{
+  float *d_Xsqr = NULL, *d_Xinv = NULL;
+  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
+  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xsqr));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Xsqr, Xsqr, mem_Xsqr, cudaMemcpyHostToDevice));
+
+  dim3 block(16, 8, 1); // Assumes k2p2 <= 8
+  dim3 grid(m, 1, 1);
+  const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
+  bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
+
+  *Xinv = (float *)malloc(mem_Xsqr);
+  CUDA_SUCCEED(cudaMemcpy(*Xinv, d_Xinv, mem_Xsqr, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaFree(d_Xinv));
+  CUDA_SUCCEED(cudaFree(d_Xsqr));
+}
+
+/*
 
 __global__ void bfast_step_4a(float *A, float *B, float *C, int rows_a,
     int cols_a, int cols_b)
@@ -435,7 +459,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
     CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
     dim3 block(16, 8, 1);
     dim3 grid(m, 1, 1);
-    const size_t shared_size = k2p2 * 2 * k2p2;
+    const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
     bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
   }
 
