@@ -1,2 +1,4 @@
 bfast-kernels
 bfast-kernels.c
+*.actual
+*.expected
