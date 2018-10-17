@@ -52,6 +52,25 @@ BFAST:
   // nss is m
   // sigmas is m
 
+  h = (int)((float)n * hfrac)
+  // y_errors is m by N
+  // nss is m
+  MO_fsts = step_7a_kernel(y_errors, nss, m, N, h)
+  // MO_fsts is m
+
+  BOUND = step_7b_kernel(n, lam)
+  // BOUND is (N-n)
+
+
+  // Nss is m
+  // nss is m
+  // sigmas is m
+  // MO_fsts is m
+  // y_errors is m by N
+  // val_indss is m by N
+  // BOUND is (N-n)
+  breakss = step_8_kernel(Nss, nss, sigmas, MO_fsts, y_errors, val_indss, BOUND, h, n)
+  // breakss is m by (N-n)
 
 
 
