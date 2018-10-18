@@ -1,6 +1,6 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <assert.h>
+#include <cstdio>
+#include <cstdint>
+#include <cassert>
 #include "bfast.h"
 #include "bfast-helpers.cu.h"
 
