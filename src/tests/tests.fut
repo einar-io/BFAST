@@ -44,4 +44,13 @@
 -- compiled input @ ../../data/sahara-4c.in.gz
 -- output @ ../../data/sahara-4c.out.gz
 
+-- ==
+-- entry: bfast-5
+-- compiled input @ ../../data/sahara-5.in.gz
+-- output @ ../../data/sahara-5.out.gz
+
+-- ==
+-- entry: bfast-6
+-- compiled input @ ../../data/sahara-6.in.gz
+-- output @ ../../data/sahara-6.out.gz
 

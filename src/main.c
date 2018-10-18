@@ -19,6 +19,10 @@ extern void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
     int m, int k2p2);
 extern void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
     int m, int N, int k2p2);
+extern void bfast_step_5_single(float *Y, float *y_preds, int **Nss,
+    float **y_errors, int **val_indss, int N, int m);
+extern void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
+    float **sigmas, int n, int k2p2, int m, int N);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -227,6 +231,64 @@ void bfast_4c()
   free(y_preds);
 }
 
+void bfast_5()
+{
+  int m, N;
+  float *Y = NULL, *y_preds = NULL;
+  int64_t Y_shp[2], y_preds_shp[2];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Y, Y_shp, 2) == 0);
+  BFAST_ASSERT(read_array(&f32_info, (void **)&y_preds, y_preds_shp, 2) == 0);
+  BFAST_ASSERT(Y_shp[0] == y_preds_shp[0]); //  m
+  BFAST_ASSERT(Y_shp[1] == y_preds_shp[1]); //  N
+  m = Y_shp[0];
+  N = Y_shp[1];
+  fprintf(out, "m=%d, N=%d\n", m, N);
+
+  int *Nss = NULL, *val_indss = NULL;
+  float *y_errors = NULL;
+  bfast_step_5_single(Y, y_preds, &Nss, &y_errors, &val_indss, N, m);
+
+  int64_t Nss_shp[1] = { m };
+  int64_t val_indss_shp[2] = { m, N }, y_errors_shp[2] = { m, N };
+  write_array(stdout, 1, &i32_info, Nss, Nss_shp, 1);
+  write_array(stdout, 1, &f32_info, y_errors, y_errors_shp, 2);
+  write_array(stdout, 1, &i32_info, val_indss, val_indss_shp, 2);
+
+  free(Y);
+  free(y_preds);
+  free(Nss);
+  free(y_errors);
+  free(val_indss);
+}
+
+void bfast_6()
+{
+  int m, N, n, k2p2;
+  float *Y = NULL, *y_errors = NULL;
+  int64_t Y_shp[2], y_errors_shp[2];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Y, Y_shp, 2) == 0);
+  BFAST_ASSERT(read_array(&f32_info, (void **)&y_errors, y_errors_shp, 2) ==0);
+  BFAST_ASSERT(read_scalar(&i32_info, &n) == 0);
+  BFAST_ASSERT(read_scalar(&i32_info, &k2p2) == 0);
+  BFAST_ASSERT(Y_shp[0] == y_errors_shp[0]); //  m
+  BFAST_ASSERT(Y_shp[1] == y_errors_shp[1]); //  N
+  m = Y_shp[0];
+  N = Y_shp[1];
+
+  int *nss = NULL;
+  float *sigmas = NULL;
+  bfast_step_6_single(Y, y_errors, &nss, &sigmas, n, k2p2, m, N);
+
+  int64_t nss_shp[1] = { m }, sigmas_shp[1] = { m };
+  write_array(stdout, 1, &i32_info, nss, nss_shp, 1);
+  write_array(stdout, 1, &f32_info, sigmas, sigmas_shp, 1);
+
+  free(Y);
+  free(y_errors);
+  free(nss);
+  free(sigmas);
+}
+
 int run_entry(const char *entry)
 {
   struct {
@@ -240,7 +302,9 @@ int run_entry(const char *entry)
     { "bfast-3", bfast_3 },
     { "bfast-4a", bfast_4a },
     { "bfast-4b", bfast_4b },
-    { "bfast-4c", bfast_4c }
+    { "bfast-4c", bfast_4c },
+    { "bfast-5", bfast_5 },
+    { "bfast-6", bfast_6 }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {

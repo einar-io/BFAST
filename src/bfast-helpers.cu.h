@@ -45,104 +45,56 @@ void transpose(float *d_A, float *d_B, int heightA, int widthA)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// For bfast_5
+// For bfast_5 and bfast_6
 
-/*
-class TupleInt {
-  public:
-    int x;
-    int y;
-    __device__ __host__ inline TupleInt()
-    {
-        x = 0; y = 0;
-    }
-    __device__ __host__ inline TupleInt(const int& a, const int& b)
-    {
-        x = a; y = b;
-    }
-    __device__ __host__ inline TupleInt(const TupleInt& i2)
-    {
-        x = i2.x; y = i2.y;
-    }
-    volatile __device__ __host__ inline TupleInt& operator=(const TupleInt& i2) volatile
-    {
-        x = i2.x; y = i2.y;
-        return *this;
-    }
-};
-
-TupleInt map_fun(float val)
+template <class T>
+__device__ inline T scaninc_warp_add(volatile T *in)
 {
-  int nan = isnan(val);
-  return TupleInt(!nan, nan);
-}
-
-TupleInt op(TupleInt a, TupleInt b)
-{
-  return TupleInt(a.x + b.x, a.y + b.y);
-}
-
-TupleInt scaninc_warp(volatile TupleInt *p)
-{
-  const unsigned int idx = threadIdx.x
+  const unsigned int idx  = threadIdx.x;
   const unsigned int lane = idx & 31;
 
   // no synchronization needed inside a WARP,
   //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(p[idx-1],  p[idx]);
-  if (lane >= 2)  p[idx] = op(p[idx-2],  p[idx]);
-  if (lane >= 4)  p[idx] = op(p[idx-4],  p[idx]);
-  if (lane >= 8)  p[idx] = op(p[idx-8],  p[idx]);
-  if (lane >= 16) p[idx] = op(p[idx-16], p[idx]);
+  if (lane >= 1)  { in[idx] = in[idx-1]  + in[idx]; }
+  if (lane >= 2)  { in[idx] = in[idx-2]  + in[idx]; }
+  if (lane >= 4)  { in[idx] = in[idx-4]  + in[idx]; }
+  if (lane >= 8)  { in[idx] = in[idx-8]  + in[idx]; }
+  if (lane >= 16) { in[idx] = in[idx-16] + in[idx]; }
 
-  return const_cast<T&>(p[idx]);
+  return in[idx];
 }
 
-TupleInt scaninc_map_warp(volatile float *in, volatile TupleInt *p)
+template <class T>
+__device__ inline void scaninc_block_add(volatile T *in)
 {
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx & 31;
-
-  // no synchronization needed inside a WARP,
-  //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(map_fun(in[idx-1]),  map_fun(in[idx]));
-  if (lane >= 2)  p[idx] = op(map_fun(in[idx-2]),  map_fun(in[idx]));
-  if (lane >= 4)  p[idx] = op(map_fun(in[idx-4]),  map_fun(in[idx]));
-  if (lane >= 8)  p[idx] = op(map_fun(in[idx-8]),  map_fun(in[idx]));
-  if (lane >= 16) p[idx] = op(map_fun(in[idx-16]), map_fun(in[idx]));
-
-  return const_cast<T&>(p[idx]);
-}
-
-void scaninc_map_block(volatile float *in, volatile TupleInt *p)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx &  31;
+  const unsigned int idx    = threadIdx.x;
+  const unsigned int lane   = idx &  31;
   const unsigned int warpid = idx >> 5;
 
-  TupleInt val = scaninc_map_warp<OP>(in, p);
+  T val = scaninc_warp_add(in);
   __syncthreads();
 
-  if (lane == 31) { p[warpid] = val; }
+  if (lane == 31) { in[warpid] = val; }
   __syncthreads();
 
-  if (warpid == 0) scaninc_warp(p);
+  if (warpid == 0) scaninc_warp_add(in);
   __syncthreads();
 
   if (warpid > 0) {
-      val = op(p[warpid-1], val);
+    val = in[warpid-1] + val;
   }
 
   __syncthreads();
-  p[idx] = val;
+  in[idx] = val;
+  __syncthreads();
 }
-*/
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 // For bfast_6 and bfast_7a
 
+/*
 
 float op2(float a, float b) { return a + b; }
 
@@ -185,3 +137,4 @@ void scaninc_block_op2(volatile float *in, volatile float *out)
   out[idx] = val;
   __syncthreads();
 }
+*/

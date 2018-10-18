@@ -407,99 +407,185 @@ extern "C" void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
 }
 
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 5: Calculating Nss, y_erros, val_indss
+//
+// Input:
+//   Y:         [m][N]f32
+//   y_preds:   [m][N]f32
+// Output:
+//   Nss:       [m]i32
+//   y_errors:  [m][N]f32
+//   val_indss: [m][N]i32
+//
 
-__global__ void bfast_step_5(float *images, float *y_preds, int *Nss,
+__global__ void bfast_step_5(float *Y, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
 {
-  // images is m by N
-  // y_preds is m by N
-
-  // Nss is m
-  // y_errors is m by N
-  // val_indss is m by N
-
-  // Cosmin's tip: Assume N < 1024
-  // I.e., each time series is handled within a block
-
-  // Grid dimensions (x, y, z): (m, 1, 1)
-  // Block dimensions (x, y, z ): (1024, 1, 1)
+  // Grid: (m, 1, 1)
+  // Block: (1024, 1, 1)
 
   if (threadIdx.x >= N) { return; }
 
-  float *y = &images[blockIdx.x * N];
+  float *y = &Y[blockIdx.x * N];
   float *y_pred = &y_preds[blockIdx.x * N];
   float *y_error = &y_errors[blockIdx.x * N];
-  float *val_inds = &val_indss[blockIdx.x * N];
+  int *val_inds = &val_indss[blockIdx.x * N];
   int *Ns = &Nss[blockIdx.x];
 
-  __shared__ float y_error_all[1024];
-
   float val = y[threadIdx.x];
-  if (!isnan(val)) {
-    y_error_all[threadIdx.x] = val - y_pred[threadIdx.x];
-  } else {
-    y_error_all[threadIdx.x] = NAN;
-  }
+  float err = !isnan(val) ? val - y_pred[threadIdx.x] : NAN;
+
+  // Partition
+  __shared__ int num_valids[1024];
+  num_valids[threadIdx.x] = !isnan(err);
   __syncthreads();
+  scaninc_block_add<int>(num_valids);
+  int i = num_valids[N - 1];
 
-
-  //  Partition
-  __shared__ TupleInt scan_res[1024];
-  scaninc_map_block(y_error_all, scan_res);
-  int i = scan_res[N - 1].x;
-
-  __syncthreads();
-
-  if (!isnan(y_error_all[threadIdx.x])) {
-    unsigned int idx = scan_res[threadIdx.x].x - 1;
-    y_error[idx] = y_error_all[threadIdx.x];
-    val_inds[idx] = threadIdx.x;
+  unsigned int idx;
+  if (!isnan(err)) {
+    idx = num_valids[threadIdx.x] - 1;
   } else {
-    unsigned int idx = scan_res[threadIdx.x].y - 1 + i;
-    y_error[idx] = y_error_all[threadIdx.x];
-    val_inds[idx] = threadIdx.x;
+    float num_invalids = threadIdx.x - (num_valids[threadIdx.x] - 1);
+    idx = num_invalids - 1 + i;
+    //idx = threadIdx.x - num_valids[threadIdx.x] + i;
   }
 
+  y_error[idx] = err;
+  val_inds[idx] = threadIdx.x;
   if (threadIdx.x == 0) {
     *Ns = i;
   }
 }
 
+extern "C" void bfast_step_5_single(float *Y, float *y_preds, int **Nss,
+    float **y_errors, int **val_indss, int N, int m)
+{
+  float *d_Y = NULL, *d_y_preds = NULL, *d_y_errors = NULL;
+  int *d_Nss = NULL, *d_val_indss = NULL;
+  const size_t mem_Y = m * N * sizeof(float);
+  const size_t mem_y_preds = mem_Y;
+  const size_t mem_Nss = m * sizeof(float);
+  const size_t mem_y_errors = mem_Y;
+  const size_t mem_val_indss = mem_Y;
+
+  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
+  CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
+  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
+  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_y_preds, y_preds, mem_y_preds, cudaMemcpyHostToDevice));
+
+  dim3 block(1024, 1, 1);
+  dim3 grid(m, 1, 1);
+  bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
+
+  *Nss = (int *)malloc(mem_Nss);
+  *y_errors = (float *)malloc(mem_y_errors);
+  *val_indss = (int *)malloc(mem_val_indss);
+  CUDA_SUCCEED(cudaMemcpy(*Nss, d_Nss, mem_Nss, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaMemcpy(*y_errors, d_y_errors, mem_y_errors,
+        cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaMemcpy(*val_indss, d_val_indss, mem_val_indss,
+        cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_Y));
+  CUDA_SUCCEED(cudaFree(d_y_preds));
+  CUDA_SUCCEED(cudaFree(d_Nss));
+  CUDA_SUCCEED(cudaFree(d_y_errors));
+  CUDA_SUCCEED(cudaFree(d_val_indss));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 6: Calculating nss, sigmas
+//
+// Input:
+//   Y:       [m][N]f32     (only using slice: [m][n])
+//   y_preds: [m][N]f32
+// Output:
+//   nss:     [m]i32
+//   sigmas:  [m]f32
+//
+
 __global__ void bfast_step_6(float *Yh, float *y_errors, int *nss,
-    float *sigmas, int m, int n, int N, int k2p2)
+    float *sigmas, int n, int N, int k2p2)
 {
   // Grid dimensions (x, y, z): (m, 1, 1)
   // Block dimensions (x, y, z ): (1024, 1, 1)
 
+  if (threadIdx.x >= n) { return; }
 
-  if (threadIdx.x >= N) { return; }
-
-  float *yh = &Yh[blockIdx.x * N]; // remember that Yh is m by N in memory (it's technically Y)
+  float *yh = &Yh[blockIdx.x * N]; // Yh is Y, so N cols in memory
   float *y_error = &y_errors[blockIdx.x * N];
 
-  __shared__ TupleInt scan_res[1024];
-  if (threadIdx.x < n) {
-    scaninc_map_block(yh, scan_res);
-  }
+  __shared__ int num_valids[1024];
+  num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
+  __syncthreads();
+  scaninc_block_add<int>(num_valids);
+  int ns = num_valids[n - 1];
 
-  int ns = scan_res[n - 1].x;
-
-  __shared__ float scan_me[1024];
-  __shared__ float scan_res_2[1024];
-  if (threadIdx.x < ns) {
-    float val = y_error[threadIdx.x];
-    scan_me[threadIdx.x] = val * val;
-    scaninc_block_op2(scan_me, scan_res_2);
-  }
+  // hacky optimization: reuse num_valids by ptr cast
+  __shared__ float sigma_shared[1024];
+  float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
+  val = val * val;
+  sigma_shared[threadIdx.x] = val;
+  __syncthreads();
+  scaninc_block_add<float>(sigma_shared);
 
   if (threadIdx.x == 0) {
-    float sigma0 = scan_res_2[ns - 1];
-    float sigma = sqrt(sigma / ((float)(ns-k2p2)));
+    float sigma0 = sigma_shared[n - 1];
+    float sigma = sqrtf(sigma0 / ((float)(ns - k2p2)));
 
     nss[blockIdx.x] = ns;
     sigmas[blockIdx.x] = sigma;
   }
 }
+
+extern "C" void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
+    float **sigmas, int n, int k2p2, int m, int N)
+{
+  float *d_Y = NULL, *d_y_errors = NULL, *d_sigmas = NULL;
+  int *d_nss = NULL;
+  const size_t mem_Y = m * N * sizeof(float);
+  const size_t mem_y_errors = mem_Y;
+  const size_t mem_nss = m * sizeof(float);
+  const size_t mem_sigmas = mem_nss;
+
+  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
+  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
+  CUDA_SUCCEED(cudaMalloc(&d_sigmas, mem_sigmas));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_y_errors, y_errors, mem_y_errors,
+        cudaMemcpyHostToDevice));
+
+  fprintf(stderr, "n=%d, k2p2=%d, m=%d, N=%d\n", n, k2p2, m, N);
+  dim3 block(1024, 1, 1);
+  dim3 grid(m, 1, 1);
+  bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
+
+  *nss = (int *)malloc(mem_nss);
+  *sigmas = (float *)malloc(mem_sigmas);
+
+  CUDA_SUCCEED(cudaMemcpy(*nss, d_nss, mem_nss, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaMemcpy(*sigmas, d_sigmas, mem_sigmas,
+        cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_Y));
+  CUDA_SUCCEED(cudaFree(d_y_errors));
+  CUDA_SUCCEED(cudaFree(d_nss));
+  CUDA_SUCCEED(cudaFree(d_sigmas));
+}
+
+/*
 
   // let h = t32 ( (r32 n) * hfrac )
   //unsigned int h = (unsigned int) ((float)n * hfrac);
@@ -559,7 +645,6 @@ void bfast_step_7b(float lam, float hfrac, int n, int N,
   BOUND[threadIdx.x] = lam * sqrt(tmp);
   }
 
-/*
 
 
 extern "C" void bfast_step_naive(struct bfast_step_in *in,
