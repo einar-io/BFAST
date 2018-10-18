@@ -221,10 +221,10 @@ extern "C" void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m)
 __global__ void bfast_step_4a(float *Xh, float *Yth, float *beta0t, int k2p2,
     int n, int m, int N)
 {
-  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
   int gidy = blockIdx.y * blockDim.y + threadIdx.y;
+  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if(gidx >= m || gidy >= k2p2) {
+  if(gidy >= k2p2 || gidx >= m) {
     return;
   }
 
@@ -483,7 +483,7 @@ extern "C" void bfast_step_naive(struct bfast_step_in *in,
 
 
   float *d_Xsqr; // List of m matrices that are k2p2 by k2p2
-  const size_t mem_Xsqr = k2p2 * k2p2;
+  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
   {
     CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
     dim3 block(8, 8, 1);
