@@ -15,6 +15,10 @@ extern void bfast_step_2_single(float *X, float *Xt, float *Y, float **Xsqr,
 extern void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m);
 extern void bfast_step_4a_single(float *X, float *Y, float **beta0, int k2p2,
     int n, int m, int N);
+extern void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
+    int m, int k2p2);
+extern void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
+    int m, int N, int k2p2);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -175,6 +179,54 @@ void bfast_4a()
   free(beta0);
 }
 
+void bfast_4b()
+{
+  int m, k2p2;
+  float *Xinv = NULL, *beta0 = NULL;
+  int64_t Xinv_shp[3], beta0_shp[2];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Xinv, Xinv_shp, 3) == 0);
+  BFAST_ASSERT(read_array(&f32_info, (void **)&beta0, beta0_shp, 2) == 0);
+  BFAST_ASSERT(Xinv_shp[1] == Xinv_shp[2] && Xinv_shp[1] == beta0_shp[1]);
+  BFAST_ASSERT(Xinv_shp[0] == beta0_shp[0]); // m
+  m = Xinv_shp[0];
+  k2p2 = Xinv_shp[1];
+  fprintf(out, "m=%d, k2p2=%d\n", m, k2p2);
+
+  float *beta = NULL;
+  bfast_step_4b_single(Xinv, beta0, &beta, m, k2p2);
+
+  int64_t beta_shp[2] = { m, k2p2 };
+  write_array(stdout, 1, &f32_info, beta, beta_shp, 2);
+
+  free(Xinv);
+  free(beta0);
+  free(beta);
+}
+
+void bfast_4c()
+{
+  int m, N, k2p2;
+  float *Xt = NULL, *beta = NULL;
+  int64_t Xt_shp[2], beta_shp[2];
+  BFAST_ASSERT(read_array(&f32_info, (void **)&Xt, Xt_shp, 2) == 0);
+  BFAST_ASSERT(read_array(&f32_info, (void **)&beta, beta_shp, 2) == 0);
+  BFAST_ASSERT(Xt_shp[1] == beta_shp[1]); // k2p2
+  N = Xt_shp[0];
+  k2p2 = Xt_shp[1];
+  m = beta_shp[0];
+  fprintf(out, "N=%d, k2p2=%d, m=%d\n", N, k2p2, m);
+
+  float *y_preds = NULL;
+  bfast_step_4c_single(Xt, beta, &y_preds, m, N, k2p2);
+
+  int64_t y_preds_shp[2] = { m, N };
+  write_array(stdout, 1, &f32_info, y_preds, y_preds_shp, 2);
+
+  free(Xt);
+  free(beta);
+  free(y_preds);
+}
+
 int run_entry(const char *entry)
 {
   struct {
@@ -186,7 +238,9 @@ int run_entry(const char *entry)
     { "bfast-1", bfast_1 },
     { "bfast-2", bfast_2 },
     { "bfast-3", bfast_3 },
-    { "bfast-4a", bfast_4a }
+    { "bfast-4a", bfast_4a },
+    { "bfast-4b", bfast_4b },
+    { "bfast-4c", bfast_4c }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {

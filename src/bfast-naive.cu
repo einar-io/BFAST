@@ -274,35 +274,26 @@ extern "C" void bfast_step_4a_single(float *X, float *Y, float **beta0,
   CUDA_SUCCEED(cudaFree(d_beta0t));
 }
 
-/*
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 4b: Calculating beta
+//
+// Input:
+//   Xinv:  [m][k2p2][k2p2]f32
+//   beta0: [m][k2p2]f32
+// Output:
+//   beta:  [m][k2p2]f32
+//
+// Every block performs a matrix-vector multiplication between a matrix from
+// Xinv and a row from beta0. The resulting vectors are rows in the final
+// [m][k2p2] matrix, beta.
+//
 
 __global__ void bfast_step_4b(float *Xinv, float *beta0, float *beta, int k2p2)
 {
-  // block_matvecmul
-  // The C output from bfast_step_4a is as follows
-  //   C =
-  //     [
-  //       [c_11, c_12, ..., c_1m], -- 1
-  //       [c_21, c_22, ..., c_2m], -- 2
-  //       ...
-  //       [c_(k2p2)1, c_(k2p2)2, ..., c_(k2p2)m]  -- k2p2
-  //     ]
-  // We want beta0 to look as follows
-  //   beta0 =
-  //     [
-  //       c_11, c_21, ..., c_(k2p2)1
-  //       c_12, c_22, ..., c_(k2p2)2
-  //       ...
-  //       c_1m, c_2m, ..., c_(k2p2)m
-  //     ]
-  // From this, we see that transpose(C) is beta0
-
-  // Xinv shape: (m, k2p2, k2p2)
-  // beta0 is m by k2p2
-  // beta is k2p2 by m
-
-  // Each block calculates on matrix-vector multiplication
-  // Block size is k2p2
+  // Grid: (m, 1, 1)
+  // Block: (k2p2, 1, 1)
 
   if (threadIdx.x >= k2p2) { return; }
 
@@ -314,35 +305,109 @@ __global__ void bfast_step_4b(float *Xinv, float *beta0, float *beta, int k2p2)
     accum += inv[IDX_2D(threadIdx.x, i, k2p2)] * vct[i];
   }
 
-  beta[IDX_2D(threadIdx.x, blockIdx.x, blockDim.x)] = accum;
+  beta[IDX_2D(blockIdx.x, threadIdx.x, blockDim.x)] = accum;
 }
 
-__global__ void bfast_step_4c(float *A, float *B, float *C, int rows_a,
-    int cols_a, int cols_b)
+extern "C" void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
+    int m, int k2p2)
 {
-  // matmat_mul
-  // When called in calculation of y_preds in bfast-distrib.fut:
-  //    A (Xt) is N by k2p2
-  //    B (beta) is k2p2 by m
-  //    C (y_preds) N by m
-  // Spawn with one thread per element in the output matrix
+  float *d_Xinv = NULL, *d_beta0 = NULL, *d_beta = NULL;
+  const size_t mem_Xinv = m * k2p2 * k2p2 * sizeof(float);
+  const size_t mem_beta0 = m * k2p2 * sizeof(float);
+  const size_t mem_beta = mem_beta0;
+
+  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
+  CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
+  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Xinv, Xinv, mem_Xinv, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_beta0, beta0, mem_beta0, cudaMemcpyHostToDevice));
+
+  dim3 block(8, 1, 1); // Assumes k2p2 <= 8
+  dim3 grid(m, 1, 1);
+  bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
+
+  *beta = (float *)malloc(mem_beta);
+  CUDA_SUCCEED(cudaMemcpy(*beta, d_beta, mem_beta, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaFree(d_Xinv));
+  CUDA_SUCCEED(cudaFree(d_beta0));
+  CUDA_SUCCEED(cudaFree(d_beta));
+}
 
 
-  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 4c: Calculating y_preds
+//
+// Input:
+//   Xt:      [N][k2p2]f32
+//   beta:    [m][k2p2]f32
+// Output:
+//   y_preds: [m][N]f32
+//
+// Similar reasoning as in 4a. Consider merging these two kernels, the only
+// difference is the filtering.
+//
+// The kernel will take as input Xt and betat, and it will output y_predst:
+//     [N][k2p2] multiplied with [k2p2][m] is [N][m]
+
+__global__ void bfast_step_4c(float *Xt, float *betat, float *y_predst,
+    int N, int m, int k2p2)
+{
   int gidy = blockIdx.y * blockDim.y + threadIdx.y;
+  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if(gidx >= cols_b || gidy >= rows_a) {
+  if(gidy >= N || gidx >= m) {
     return;
   }
 
   float accum = 0.0;
-  for(int k = 0; k < cols_a; k ++) {
-    float val = B[IDX_2D(k, gidx, cols_b)];
-    accum += A[IDX_2D(gidy, k, cols_a)] * val;
+  for(int k = 0; k < k2p2; k ++) {
+    accum += Xt[IDX_2D(gidy, k, k2p2)] * betat[IDX_2D(k, gidx, m)];
   }
 
-  C[IDX_2D(gidy, gidx, cols_b)] = accum;
+  y_predst[IDX_2D(gidy, gidx, m)] = accum;
 }
+
+extern "C" void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
+    int m, int N, int k2p2)
+{
+  float *d_Xt = NULL, *d_beta = NULL, *d_betat = NULL;
+  float *d_y_preds = NULL, *d_y_predst = NULL;
+  const size_t mem_Xt = N * k2p2 * sizeof(float);
+  const size_t mem_beta = m * k2p2 * sizeof(float);
+  const size_t mem_y_preds = m * N * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_Xt));
+  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
+  CUDA_SUCCEED(cudaMalloc(&d_betat, mem_beta));
+  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
+  CUDA_SUCCEED(cudaMalloc(&d_y_predst, mem_y_preds));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_Xt, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_beta, beta, mem_beta, cudaMemcpyHostToDevice));
+
+  transpose(d_beta, d_betat, m, k2p2);
+
+  dim3 block(16, 16, 1);
+  dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
+  bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
+
+  transpose(d_y_predst, d_y_preds, N, m);
+
+  *y_preds = (float *)malloc(mem_y_preds);
+  CUDA_SUCCEED(cudaMemcpy(*y_preds, d_y_preds, mem_y_preds,
+        cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaFree(d_Xt));
+  CUDA_SUCCEED(cudaFree(d_beta));
+  CUDA_SUCCEED(cudaFree(d_betat));
+  CUDA_SUCCEED(cudaFree(d_y_preds));
+  CUDA_SUCCEED(cudaFree(d_y_predst));
+}
+
+
+/*
 
 __global__ void bfast_step_5(float *images, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
