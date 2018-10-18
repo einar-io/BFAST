@@ -407,7 +407,6 @@ extern "C" void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
 }
 
 
-/*
 
 __global__ void bfast_step_5(float *images, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
@@ -466,7 +465,7 @@ __global__ void bfast_step_5(float *images, float *y_preds, int *Nss,
   }
 }
 
-__global__ void bfast_step_6(float *Yh, float *y_errors, float *nss,
+__global__ void bfast_step_6(float *Yh, float *y_errors, int *nss,
     float *sigmas, int m, int n, int N, int k2p2)
 {
   // Grid dimensions (x, y, z): (m, 1, 1)
@@ -501,6 +500,67 @@ __global__ void bfast_step_6(float *Yh, float *y_errors, float *nss,
     sigmas[blockIdx.x] = sigma;
   }
 }
+
+  // let h = t32 ( (r32 n) * hfrac )
+  //unsigned int h = (unsigned int) ((float)n * hfrac);
+__global__ void bfast_step_7a(float *y_errors,
+    int *nss, int h, int m, float *MO_fsts)
+{
+  // input:
+  //    y_errors: [m][N]
+  //    nss:      [m]
+  // output:
+  //    MO_fsts:  [m]
+
+  // Grid:  (m, 1, 1)
+  // Block: (1024, 1, 1)
+
+  if (h <= threadIdx.x) { return; }
+
+  float *y_error = &y_errors[blockIdx.x * N];
+  float ns      = nss[blockIdx.x];
+  float *MO_fst  = &MO_fsts[blockIdx.x];
+
+  __shared__ float errs[1024];
+
+  errs[threadIdx.x] = y_error[threadIdx.x  + ns - h + 1];
+  __syncthreads();
+
+   //Scan
+  scaninc_block_op2(errs, errs);
+
+  if (threadIdx.x == 0) {
+    *MO_fst = errs[h-1];
+  }
+}
+
+// Calculates a bound value of at least lam for each step in the monitor period. 
+void bfast_step_7b(float lam, float hfrac, int n, int N,
+    float *BOUND)
+{
+  // Grid dimensions (x, y, z): (1, 1, 1)
+  // Block dimensions (x, y, z ): (1024, 1, 1)
+
+  assert(N <= 1024);
+  assert(n <= N);
+
+  if (N-n-1 < threadIdx.x) { return; }
+
+  // Index into monitor period
+  unsigned int t = n + 1 + threadIdx.x;
+
+  float tmp;
+  float frac = t/(float)n; 
+
+  // logplus(frac). Assures `tmp` is at least 1.
+  if (frac > exp(1.0)) { tmp = log(frac); }
+  else                 { tmp = 1.0; }
+
+  BOUND[threadIdx.x] = lam * sqrt(tmp);
+  }
+
+/*
+
 
 extern "C" void bfast_step_naive(struct bfast_step_in *in,
     struct bfast_step_out *out)

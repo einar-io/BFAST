@@ -130,49 +130,47 @@ void scaninc_map_block(volatile float *in, volatile TupleInt *p)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// For bfast_6
+// For bfast_6 and bfast_7a
 
-/*
+
 float op2(float a, float b) { return a + b; }
 
-float scaninc_warp_op2(volatile float *in, volatile float *p)
+float scaninc_warp_op2(volatile float *in, volatile float *out)
 {
-  const unsigned int idx = threadIdx.x
+  const unsigned int idx = threadIdx.x;
   const unsigned int lane = idx & 31;
 
   // no synchronization needed inside a WARP,
   //   i.e., SIMD execution
-  if (lane >= 1)  p[idx] = op(in[idx-1],  in[idx]);
-  if (lane >= 2)  p[idx] = op(in[idx-2],  in[idx]);
-  if (lane >= 4)  p[idx] = op(in[idx-4],  in[idx]);
-  if (lane >= 8)  p[idx] = op(in[idx-8],  in[idx]);
-  if (lane >= 16) p[idx] = op(in[idx-16], in[idx]);
+  if (lane >= 1)  out[idx] = op2(in[idx-1],  in[idx]);
+  if (lane >= 2)  out[idx] = op2(in[idx-2],  in[idx]);
+  if (lane >= 4)  out[idx] = op2(in[idx-4],  in[idx]);
+  if (lane >= 8)  out[idx] = op2(in[idx-8],  in[idx]);
+  if (lane >= 16) out[idx] = op2(in[idx-16], in[idx]);
 
-  return p[idx];
+  return out[idx];
 }
 
-void scaninc_block_op2(volatile float *in, volatile float *p)
+void scaninc_block_op2(volatile float *in, volatile float *out)
 {
   const unsigned int idx = threadIdx.x
   const unsigned int lane = idx &  31;
   const unsigned int warpid = idx >> 5;
 
-  float val = scaninc_map_warp(in, p);
+  float val = scaninc_map_warp(in, out);
   __syncthreads();
 
-  if (lane == 31) { p[warpid] = val; }
+  if (lane == 31) { out[warpid] = val; }
   __syncthreads();
 
-  if (warpid == 0) { scaninc_warp(p); }
+  if (warpid == 0) { scaninc_warp(out); }
   __syncthreads();
 
   if (warpid > 0) {
-      val = op(p[warpid-1], val);
+      val = op(out[warpid-1], val);
   }
 
   __syncthreads();
-  p[idx] = val;
+  out[idx] = val;
+  __syncthreads();
 }
-
-*/
-
