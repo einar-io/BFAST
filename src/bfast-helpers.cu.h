@@ -45,7 +45,7 @@ void transpose(float *d_A, float *d_B, int heightA, int widthA)
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// For bfast_5 and bfast_6
+// For bfast_5, bfast_6, bfast_7a
 
 template <class T>
 __device__ inline T scaninc_warp_add(volatile T *in)
@@ -89,52 +89,3 @@ __device__ inline void scaninc_block_add(volatile T *in)
   __syncthreads();
 }
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// For bfast_6 and bfast_7a
-
-/*
-
-float op2(float a, float b) { return a + b; }
-
-float scaninc_warp_op2(volatile float *in, volatile float *out)
-{
-  const unsigned int idx = threadIdx.x;
-  const unsigned int lane = idx & 31;
-
-  // no synchronization needed inside a WARP,
-  //   i.e., SIMD execution
-  if (lane >= 1)  out[idx] = op2(in[idx-1],  in[idx]);
-  if (lane >= 2)  out[idx] = op2(in[idx-2],  in[idx]);
-  if (lane >= 4)  out[idx] = op2(in[idx-4],  in[idx]);
-  if (lane >= 8)  out[idx] = op2(in[idx-8],  in[idx]);
-  if (lane >= 16) out[idx] = op2(in[idx-16], in[idx]);
-
-  return out[idx];
-}
-
-void scaninc_block_op2(volatile float *in, volatile float *out)
-{
-  const unsigned int idx = threadIdx.x
-  const unsigned int lane = idx &  31;
-  const unsigned int warpid = idx >> 5;
-
-  float val = scaninc_map_warp(in, out);
-  __syncthreads();
-
-  if (lane == 31) { out[warpid] = val; }
-  __syncthreads();
-
-  if (warpid == 0) { scaninc_warp(out); }
-  __syncthreads();
-
-  if (warpid > 0) {
-      val = op(out[warpid-1], val);
-  }
-
-  __syncthreads();
-  out[idx] = val;
-  __syncthreads();
-}
-*/
