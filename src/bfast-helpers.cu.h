@@ -1,5 +1,16 @@
+#include <cstdlib>
 
-#define CUDA_SUCCEED(x) (assert((x) == cudaSuccess))
+#define CUDA_SUCCEED(x) cuda_api_succeed(x, #x, __FILE__, __LINE__)
+
+static inline void cuda_api_succeed(cudaError res, const char *call,
+    const char *file, int line)
+{
+  if (res != cudaSuccess) {
+    fprintf(stderr, "%s:%d: CUDA CALL\n  %s\nfailed with error code %d (%s)\n",
+        file, line, call, res, cudaGetErrorString(res));
+    exit(EXIT_FAILURE);
+  }
+}
 
 #define IDX_2D(__r,__c,__nc) ((__r) * (__nc) + (__c))
 #define CEIL_DIV(a,b) (((a) + (b) - 1) / (b))
