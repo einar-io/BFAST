@@ -3,6 +3,7 @@
 #include <cassert>
 #include "bfast.h"
 #include "bfast-helpers.cu.h"
+#define INVALID_INDEX (-1)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -586,17 +587,23 @@ extern "C" void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
 }
 
 /*
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 7a: Produces some interesting value.
+//
+// Input:
+//    y_errors: [m][N]
+//    nss:      [m]
+// Output:
+//    MO_fsts:  [m]
 
-  // let h = t32 ( (r32 n) * hfrac )
-  //unsigned int h = (unsigned int) ((float)n * hfrac);
-__global__ void bfast_step_7a(float *y_errors,
-    int *nss, int h, int m, float *MO_fsts)
+__global__ void bfast_step_7a(float *y_errors, 
+                                int *nss, 
+                                int  h, 
+                                int  m, 
+                              float *MO_fsts)
 {
-  // input:
-  //    y_errors: [m][N]
-  //    nss:      [m]
-  // output:
-  //    MO_fsts:  [m]
 
   // Grid:  (m, 1, 1)
   // Block: (1024, 1, 1)
@@ -604,8 +611,8 @@ __global__ void bfast_step_7a(float *y_errors,
   if (h <= threadIdx.x) { return; }
 
   float *y_error = &y_errors[blockIdx.x * N];
-  float ns      = nss[blockIdx.x];
-  float *MO_fst  = &MO_fsts[blockIdx.x];
+  float *MO_fst  = &MO_fsts [blockIdx.x];
+  int    ns      = nss      [blockIdx.x];
 
   __shared__ float errs[1024];
 
@@ -620,17 +627,36 @@ __global__ void bfast_step_7a(float *y_errors,
   }
 }
 
-// Calculates a bound value of at least lam for each step in the monitor period. 
-void bfast_step_7b(float lam, float hfrac, int n, int N,
-    float *BOUND)
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 7b: Produces a BOUND value of at least lam for each step in the monitor period. 
+//
+// Input:
+//    lam:   0
+//    hfrac: 0
+//    n:     0
+//    N:     0
+// Output:
+//    BOUND: [N]
+
+void bfast_step_7b(float  lam, 
+                   float  hfrac, 
+                     int  n,
+                     int  N,
+                   float *BOUND)
 {
-  // Grid dimensions (x, y, z): (1, 1, 1)
-  // Block dimensions (x, y, z ): (1024, 1, 1)
+
+  // Do this on the CPU instead.
+  // Grid: (1, 1, 1)
+  // Block: (1024, 1, 1)
 
   assert(N <= 1024);
   assert(n <= N);
 
-  if (N-n-1 < threadIdx.x) { return; }
+  int monitor_period_len = N-n-1;
+
+  if (monitor_period_len < threadIdx.x) { return; }
 
   // Index into monitor period
   unsigned int t = n + 1 + threadIdx.x;
@@ -643,9 +669,127 @@ void bfast_step_7b(float lam, float hfrac, int n, int N,
   else                 { tmp = 1.0; }
 
   BOUND[threadIdx.x] = lam * sqrt(tmp);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+//  Step 8: Mapping each sample to its excess value w.r.t. its bound. Maybe.
+//
+// Input:
+//   y_errors[]:  [m][N]
+//   val_indss[]: [m][N] 
+//   Nss[]:       [m]   
+//   nss[]:       [m]
+//   sigmas[]:    [m]
+//   MO_fsts[]:   [m]
+//   BOUND[]:     [N]
+//   h:
+//   m:
+//   N:
+// Output:
+//   breakss[]:   [m][N]
+
+__global__ void bfast_step_8(float y_errors[],  // [m][N]
+                               int val_indss[], // [m][N] 
+                               int Nss[],       // [m]   
+                               int nss[],       // [m]
+                             float sigmas[],    // [m]
+                             float MO_fsts[],   // [m]
+                             float BOUND[],     // [N]
+                               int h,
+                               int m,
+                               int N,
+                             float breakss[])   // [m][N] output
+  // Layout:
+  // Grid:  (m, 1, 1)
+  // Block: (1024, 1, 1)
+
+  // Optimization opportunities:
+  // Read bound into shared memory
+  // Reuse shared memory for MO MOP MOPP
+  // Reuse threadIdx.x instead of copying to local variable.
+  // Reuse monitor_period_max_idx in last part
+  
+  assert(N <= 1024);
+  assert(h <= N);
+  assert(n <  N); // Guard against `N-n-1 < 0`
+
+  int monitor_period_max_idx = N-n-1;
+
+  if ( monitor_period_max_idx < threadIdx.x) { return; }
+
+  // In order of appearence
+  int   Ns        = Nss       [blockIdx.x];
+  int   ns        = nss       [blockIdx.x];
+  float sigma     = sigmas    [blockIdx.x];
+  float MO_fst    = MO_fsts   [blockIdx.x];
+  float *y_error  = &y_errors [blockIdx.x * N];
+  int   *val_inds = &val_indss[blockIdx.x * N];
+  float *breaks   = &breakss  [blockIdx.x * N];
+
+{
+  // MO
+  unsigned int j = threadIdx.x;
+  __shared__ float MO_shr[1024];
+  if      ( Ns-ns =< j ) { MO_shr[j] = 0.0f; }
+  else if ( j == 0     ) { MO_shr[j] = MO_fst; }
+  else                   { MO_shr[j] = -y_error[ns - h + j] + y_error[ns + j]; }
+}
+
+{
+  // scan (+) 0.0
+  __syncthreads();
+  scaninc_block_add<float>(MO_shr);
+}
+
+{
+  // MO'
+  unsigned int mo = threadIdx.x;
+  __syncthreads();
+  MO_shr[mo] /= sigma * sqrtf( (float)ns );
+}
+
+{
+  // val_inds'
+  unsigned int i = threadIdx.x;
+  __syncthreads();
+  __shared__ int val_indsP[1024];
+    if      ( i < Ns - ns ) { val_indsP[i] = val_inds[i + ns] - n; }
+    else                    { val_indsP[i] = INVALID_INDEX; }
+}
+
+{
+  // MO'' = scatter ..
+  __syncthreads();
+  __shared__ float MOPP_shr[1024];
+  // NAN initialize
+  MOPP_shr[threadIdx.x] = CUDART_NAN_F;
+  
+  if ( threadIdx.x < N-n ) {
+    int k = val_indsP[threadIdx.x];
+    if ( !(k == INVALID_INDEX) ) {
+      MOPP_shr[k] = MOP_shr[threadIdx.x];
+    }
+    // else { emulates scatter's ignore invalid index behavior }
   }
+}
 
+{
+  // breaks = ..
+  __syncthreads();
+  if ( threadIdx.x < N-n ) {
+    float m = MOPP_shr[threadIdx.x];
+    float b = BOUND   [threadIdx.x];
 
+    if (isnan(m) || isnan(b)) { breaks[blockIdx.x] = 0.0f; }
+    else                      { breaks[blockIdx.x] = fabsf(m) - b; }
+    }
+}
+  // return
+}
+*/
 
 extern "C" void bfast_step_naive(struct bfast_step_in *in,
     struct bfast_step_out *out)
