@@ -626,7 +626,6 @@ __global__ void bfast_step_7a(float *y_errors,
     *MO_fst = errs[h-1];
   }
 }
-*/
 
 extern "C" void 
 bfast_step_7a_single(float  *y_errors,
