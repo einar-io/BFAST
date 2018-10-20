@@ -626,6 +626,43 @@ __global__ void bfast_step_7a(float *y_errors,
     *MO_fst = errs[h-1];
   }
 }
+*/
+
+extern "C" void 
+bfast_step_7a_single(float  *y_errors,
+                       int  *nss, 
+                       int   h, 
+                       int   m, 
+                     float **MO_fsts)
+{
+  float *d_y_errors = NULL;
+  int   *d_nss      = NULL;
+  int   *MO_fsts    = NULL;
+
+  const size_t mem_y_errors = m * N * sizeof(float);
+  const size_t mem_nss      = m * sizeof(float);
+  const size_t mem_MO_fsts  = m * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
+  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
+  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts, mem_MO_fsts));
+
+  CUDA_SUCCEED(cudaMemcpy(d_y_errors, y_errors, mem_y_errors, cudaMemcpyHostToDevice));
+  CUDA_SUCCEED(cudaMemcpy(d_nss, nss, mem_nss, cudaMemcpyHostToDevice));
+
+  fprintf(stderr, "h=%d, m=%d", h, m);
+
+  dim3 grid(m, 1, 1);
+  dim3 block(1024, 1, 1);
+  bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, m, d_MO_fsts);
+
+  CUDA_SUCCEED(cudaMemcpy(*MO_fsts, d_MO_fsts, mem_MO_fsts, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_MO_fsts));
+}
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -640,35 +677,46 @@ __global__ void bfast_step_7a(float *y_errors,
 // Output:
 //    BOUND: [N]
 
-void bfast_step_7b(float  lam, 
-                   float  hfrac, 
-                     int  n,
-                     int  N,
-                   float *BOUND)
+__host__ void bfast_step_7b(float  lam, 
+                            float  hfrac, 
+                              int  n,
+                              int  N,
+                            float *BOUND)
 {
 
-  // Do this on the CPU instead.
+  // We do this on the CPU instead, because:
   // Grid: (1, 1, 1)
   // Block: (1024, 1, 1)
 
   assert(N <= 1024);
   assert(n <= N);
 
-  int monitor_period_len = N-n-1;
+  int monitor_period_max_idx = N-n-1;
 
-  if (monitor_period_len < threadIdx.x) { return; }
+  for (int i = 0; i <= monitor_period_max_idx; i++){
 
-  // Index into monitor period
-  unsigned int t = n + 1 + threadIdx.x;
+    // Index into monitor period
+    unsigned int t = n + 1 + i;
 
-  float tmp;
-  float frac = t/(float)n; 
+    float tmp;
+    float frac = t/(float)n; 
 
-  // logplus(frac). Assures `tmp` is at least 1.
-  if (frac > exp(1.0)) { tmp = log(frac); }
-  else                 { tmp = 1.0; }
+    // logplus(frac). Assures `tmp` is at least 1.
+    if (frac > exp(1.0)) { tmp = log(frac); }
+    else                 { tmp = 1.0; }
 
-  BOUND[threadIdx.x] = lam * sqrt(tmp);
+    BOUND[i] = lam * sqrt(tmp);
+  }
+}
+
+extern "C" void bfast_step_7b_single(float lam, float hfrac, int n, int N, float
+    *BOUND)
+{
+
+  fprintf(stderr, "lam=%f, hfrac=%f, n=%d, N=%d\n", lam, hfrac, n, N);
+  // GPU not needed for this
+  bfast_step_7b(N, n, lam, BOUND);
+
 }
 
 
@@ -789,7 +837,76 @@ __global__ void bfast_step_8(float y_errors[],  // [m][N]
 }
   // return
 }
-*/
+
+extern "C" void
+bfast_step_8_single(float  y_errors[],  // [m][N]
+                      int  val_indss[], // [m][N] 
+                      int  Nss[],       // [m]   
+                      int  nss[],       // [m]
+                    float  sigmas[],    // [m]
+                    float  MO_fsts[],   // [m]
+                    float  BOUND[],     // [N]
+                      int  h,
+                      int  m,
+                      int  N,
+                    float *breakss[])   // [m][N] output
+{
+
+  float *d_y_errors  = NULL;
+  int   *d_val_indss = NULL;
+  int   *d_Nss       = NULL;
+  int   *d_nss       = NULL;
+  float *d_sigmas    = NULL;
+  float *d_MO_fsts   = NULL;
+  float *d_BOUND     = NULL;
+
+  const size_t mem_y_errors  = m * N * sizeof(float);
+  const size_t mem_val_indss = m * N * sizeof(int);
+  const size_t mem_Nss       = m     * sizeof(int);
+  const size_t mem_nss       = m     * sizeof(int);
+  const size_t mem_sigmas    = m     * sizeof(float);
+  const size_t mem_MO_fsts   = m     * sizeof(float);
+  const size_t mem_BOUND     =     N * sizeof(float);
+  const size_t mem_breakss   = m   N * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_y_errors,  mem_y_errors));
+  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
+  CUDA_SUCCEED(cudaMalloc(&d_Nss,       mem_Nss));
+  CUDA_SUCCEED(cudaMalloc(&d_nss,       mem_nss));
+  CUDA_SUCCEED(cudaMalloc(&d_sigmas,    mem_sigmas));
+  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts,   mem_MO_fsts));
+  CUDA_SUCCEED(cudaMalloc(&d_BOUND,     mem_BOUND));
+
+CUDA_SUCCEED(cudaMemcpy(d_y_errors,  y_errors,  mem_y_errors,  cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_val_indss, val_indss, mem_val_indss, cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_Nss,       Nss,       mem_Nss,       cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_nss,       nss,       mem_nss,       cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_sigmas,    sigmas,    mem_sigmas,    cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_MO_fsts,   MO_fsts,   mem_MO_fsts,   cudaMemcpyHostToDevice));
+CUDA_SUCCEED(cudaMemcpy(d_BOUND,     BOUND,     mem_BOUND,     cudaMemcpyHostToDevice));
+
+  fprintf(stderr, "h=%d, m=%d, n=%d", h, m, n);
+
+  dim3 grid(m, 1, 1);
+  dim3 block(1024, 1, 1);
+  bfast_step_8<<<grid, block>>>
+  (d_y_errors, d_val_indss, d_Nss, d_nss, d_sigmas, d_MO_fsts, h, m, N, d_breakss);
+
+  CUDA_SUCCEED(cudaMemcpy(*breakss, d_breakss, mem_breakss, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_MO_fsts));
+  CUDA_SUCCEED(cudaFree(d_y_errors));
+  CUDA_SUCCEED(cudaFree(d_val_indss));
+  CUDA_SUCCEED(cudaFree(d_Nss));
+  CUDA_SUCCEED(cudaFree(d_nss));
+  CUDA_SUCCEED(cudaFree(d_sigmas));
+  CUDA_SUCCEED(cudaFree(d_MO_fsts));
+  CUDA_SUCCEED(cudaFree(d_BOUND));
+  CUDA_SUCCEED(cudaFree(d_breakss));
+}
+
+
+
 
 extern "C" void bfast_step_naive(struct bfast_step_in *in,
     struct bfast_step_out *out)
