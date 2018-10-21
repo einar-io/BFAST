@@ -908,148 +908,162 @@ CUDA_SUCCEED(cudaMemcpy(d_BOUND,     BOUND,     mem_BOUND,     cudaMemcpyHostToD
 
 
 
-
-extern "C" void bfast_step_naive(struct bfast_step_in *in,
-    struct bfast_step_out *out)
+extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 {
   int k = in->k;
   int n = in->n;
-  float freq = in->freq;
+  float f = in->freq;
   float hfrac = in->hfrac;
   float lam = in->lam;
-  float *images = in->images;
+  float *Y = in->images;
   const int m = in->shp[0];
   const int N = in->shp[1];
 
   int k2p2 = k * 2 + 2;
+  int h = (int) ((float)n * hfrac);
 
+  float *d_Y, *d_X, *d_Xt, *d_Xsqr, *d_Xinv, *d_Yt;
+  float *d_beta0, *d_beta0t, *d_beta, *d_betat, *d_y_preds, *d_y_predst;
+  int *d_Nss, *d_val_indss, *d_nss;
+  float *d_sigmas, *d_MO_fsts, *d_y_errors, *d_BOUND, *d_breakss;
 
-  float *d_Y; // m by N
-  const size_t mem_Y = m * N * sizeof(float);
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMemcpy(d_Y, images, mem_Y, cudaMemcpyHostToDevice));
-
-
-  float *d_X; // k2p2 by N
   const size_t mem_X = k2p2 * N * sizeof(float);
-  {
-    CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(N, block.x),
-              CEIL_DIV(k2p2, block.y),
-              1);
-    bfast_step_1<<<grid, block>>>(d_X, k2p2, N, freq);
-  }
-
-
-  float *d_Xt; // N by k2p2
-  const size_t mem_Xt = mem_X;
-  {
-    CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_Xt));
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(N, block.x),
-              CEIL_DIV(k2p2, block.y),
-              1);
-    transpose_kernel<<<grid, block>>>(d_X, d_Xt, k2p2, N);
-  }
-
-
-  float *d_Xsqr; // List of m matrices that are k2p2 by k2p2
+  const size_t mem_Y = m * N * sizeof(float);
   const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
+  const size_t mem_Xinv = m * k2p2 * k2p2 * sizeof(float);
+  const size_t mem_beta0 = m * k2p2 * sizeof(float);
+  const size_t mem_beta = m * k2p2 * sizeof(float);
+  const size_t mem_y_preds = m * N * sizeof(float);
+  const size_t mem_Nss = m * sizeof(int);
+  const size_t mem_y_errors = mem_Y;
+  const size_t mem_val_indss = mem_Y;
+  const size_t mem_nss = m * sizeof(int);
+  const size_t mem_sigmas = mem_nss;
+  const size_t mem_MO_fsts = mem_nss;
+  const size_t mem_BOUND = (N - n) * sizeof(float);
+  const size_t mem_breakss = m * (N - n) * sizeof(float);
+
+  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
+  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_X));
+  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
+  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
+  CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
+  CUDA_SUCCEED(cudaMalloc(&d_beta0t, mem_beta0));
+  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
+  CUDA_SUCCEED(cudaMalloc(&d_betat, mem_beta));
+  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
+  CUDA_SUCCEED(cudaMalloc(&d_y_predst, mem_y_preds));
+  CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
+  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
+  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
+  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
+  CUDA_SUCCEED(cudaMalloc(&d_sigmas, mem_sigmas));
+  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts, mem_MO_fsts));
+  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
+  CUDA_SUCCEED(cudaMalloc(&d_breakss, mem_breakss));
+
+  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
+
   {
-    CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
-    dim3 block(8, 8, 1);
+    dim3 block(16, 16, 1);
+    dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
+    bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
+  }
+
+  {
+    transpose(d_X, d_Xt, k2p2, N);
+    dim3 block(8, 8, 1); // Assumes k2p2 <= 8
     dim3 grid(m, 1, 1);
     bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
   }
 
-
-  float *d_Xinv; // List of m matrices that are k2p2 by k2p2
-  const size_t mem_Xinv = mem_Xsqr;
   {
-    CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
-    dim3 block(16, 8, 1);
+    dim3 block(16, 8, 1); // Assumes k2p2 <= 8
     dim3 grid(m, 1, 1);
     const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
     bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
   }
 
-
-  float *d_Yt; // N by m
-  const size_t mem_Yt = mem_Y;
   {
-    CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Yt));
+    transpose(d_Y, d_Yt, m, N);
     dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(N, block.x),
-              CEIL_DIV(m, block.y),
-              1);
-    transpose_kernel<<<grid, block>>>(d_Y, d_Yt, m, N);
-  }
-
-
-  // (k2p2 by n) times (n by m) is (k2p2 by m)
-  float *d_beta0t; // k2p2 by m
-  const size_t mem_beta0t = k2p2 * m * sizeof(float);
-  {
-    CUDA_SUCCEED(cudaMalloc(&d_beta0t, mem_beta0t));
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(m, block.x),
-              CEIL_DIV(k2p2, block.y),
-              1);
+    dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
     bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
+    transpose(d_beta0t, d_beta0, k2p2, m);
   }
 
-  float *d_beta0; // m by k2p2
-  const size_t mem_beta0 = mem_beta0t;
   {
-    CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(m, block.x),
-              CEIL_DIV(k2p2, block.y),
-              1);
-    transpose_kernel<<<grid, block>>>(d_beta0t, d_beta0, k2p2, m);
-  }
-
-
-  float *d_beta; // m by k2p2
-  const size_t mem_beta = mem_beta0;
-  {
-    CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
-    dim3 block(16, 1, 1);
-    dim3 grid(CEIL_DIV(k2p2, block.x),
-              CEIL_DIV(m, block.y),
-              1);
+    dim3 block(8, 1, 1); // Assumes k2p2 <= 8
+    dim3 grid(m, 1, 1);
     bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
   }
 
-
-  float *d_y_preds; // m by N
-  const size_t mem_y_preds = m * N * sizeof(float);
   {
-    CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
+    transpose(d_beta, d_betat, m, k2p2);
     dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(N, block.x),
-              CEIL_DIV(m, block.y),
-              1);
-    bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_preds, N, k2p2, m);
+    dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
+    bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
+    transpose(d_y_predst, d_y_preds, N, m);
   }
 
-
-  int *d_Nss, *d_val_indss;
-  float *d_y_errors;
-  const size_t mem_Nss = m * sizeof(int);
-  const size_t mem_y_errors = m * N * sizeof(float);
-  const size_t mem_val_indss = m * N * sizeof(int);
   {
-    CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
-    CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
-    CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
     dim3 block(1024, 1, 1);
     dim3 grid(m, 1, 1);
-    bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
-        d_val_indss, N);
+    bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
   }
 
-}
-*/
+  {
+    dim3 block(1024, 1, 1);
+    dim3 grid(m, 1, 1);
+    bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
+  }
 
+  {
+    dim3 block(1024, 1, 1);
+    dim3 grid(m, 1, 1);
+    bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, m, d_MO_fsts);
+  }
+
+  {
+    float *BOUND = (float *)malloc(mem_BOUND);
+    bfast_step_7b(lam, hfrac, n, N, BOUND);
+    CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
+    free(BOUND);
+  }
+
+  {
+    dim3 block(1024, 1, 1);
+    dim3 grid(m, 1, 1);
+    bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
+        d_sigmas, d_MO_fsts, d_BOUND, h, N, n, d_breakss);
+  }
+
+  out->breakss = (float *)malloc(m * (N - n) * sizeof(float));
+  out->breakss[0] = 0.0;
+  out->shp[0] = m;
+  out->shp[1] = N - n;
+  CUDA_SUCCEED(cudaMemcpy(out->breakss, d_breakss, mem_breakss, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_X));
+  CUDA_SUCCEED(cudaFree(d_Xt));
+  CUDA_SUCCEED(cudaFree(d_Y));
+  CUDA_SUCCEED(cudaFree(d_Xsqr));
+  CUDA_SUCCEED(cudaFree(d_Xinv));
+  CUDA_SUCCEED(cudaFree(d_Yt));
+  CUDA_SUCCEED(cudaFree(d_beta0));
+  CUDA_SUCCEED(cudaFree(d_beta0t));
+  CUDA_SUCCEED(cudaFree(d_beta));
+  CUDA_SUCCEED(cudaFree(d_betat));
+  CUDA_SUCCEED(cudaFree(d_y_preds));
+  CUDA_SUCCEED(cudaFree(d_y_predst));
+  CUDA_SUCCEED(cudaFree(d_Nss));
+  CUDA_SUCCEED(cudaFree(d_y_errors));
+  CUDA_SUCCEED(cudaFree(d_val_indss));
+  CUDA_SUCCEED(cudaFree(d_nss));
+  CUDA_SUCCEED(cudaFree(d_sigmas));
+  CUDA_SUCCEED(cudaFree(d_MO_fsts));
+  CUDA_SUCCEED(cudaFree(d_BOUND));
+  CUDA_SUCCEED(cudaFree(d_breakss));
+}

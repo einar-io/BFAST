@@ -52,7 +52,7 @@ void read_bfast_input(struct bfast_in *inp)
 
 void write_bfast_outputs(struct bfast_out *outp)
 {
-  write_array(stdout, 1, &f32_info, outp->breaks, outp->shp, 2);
+  write_array(stdout, 1, &f32_info, outp->breakss, outp->shp, 2);
   printf("\n");
 }
 
@@ -91,8 +91,8 @@ void bfast()
 
   free(input.images);
 
-  if (output.breaks != NULL) {
-    free(output.breaks);
+  if (output.breakss != NULL) {
+    free(output.breakss);
   }
   */
 }

@@ -13,7 +13,7 @@ struct bfast_in {
 };
 
 struct bfast_out {
-  float *breaks;
+  float *breakss;
   int64_t shp[2];
 };
 
