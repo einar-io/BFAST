@@ -23,8 +23,12 @@ extern void bfast_step_5_single(float *Y, float *y_preds, int **Nss,
     float **y_errors, int **val_indss, int N, int m);
 extern void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
     float **sigmas, int n, int k2p2, int m, int N);
+extern void bfast_step_7a_single(float *y_errors, float *nss, int h,  int m,
+    float **MO_fsts);
 extern void bfast_step_7b_single(float lam, float hfrac, int n,  int N,
     float **BOUND);
+extern void bfast_step_8_single(float *y_errors, int *val_indss, int *Nss,  int *nss,
+    float *sigmas, float *MO_fsts, float *BOUND, int h, int m, int N, float **breakss);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0 (e.g.,
@@ -291,26 +295,33 @@ void bfast_6()
   free(sigmas);
 }
 
+void bfast_7a()
+{
+  //bfast_step_7b_single(lam, hfrac, n, N, &BOUND);
+}
+
 void bfast_7b()
 {
   int N, n;
   float lam, hfrac, *BOUND = NULL;
-  int64_t BOUND_shp[2];
-  //BFAST_ASSERT(read_array(&f32_info, (void **)&BOUND, BOUND_shp, 2) == 0);
   BFAST_ASSERT(read_scalar(&i32_info, &N) == 0);
   BFAST_ASSERT(read_scalar(&i32_info, &n) == 0);
-  BFAST_ASSERT(read_scalar(&f32_info, &lam) == 0);
   BFAST_ASSERT(read_scalar(&f32_info, &hfrac) == 0);
-  BFAST_ASSERT(BOUND_shp[1] == N); //  N
+  BFAST_ASSERT(read_scalar(&f32_info, &lam) == 0);
 
   bfast_step_7b_single(lam, hfrac, n, N, &BOUND);
 
   int64_t BOUND_shp[1] = { N };
-  write_array(stdout, 1, &i32_info, BOUND, BOUND_shp, 1);
-  write_array(stdout, 1, &f32_info, sigmas, sigmas_shp, 1);
+  write_array(stdout, 1, &f32_info, BOUND, BOUND_shp, 1);
 
   free(BOUND);
 }
+
+void bfast_8()
+{
+  //bfast_step_8_single(lam, hfrac, n, N, &BOUND);
+}
+
 int run_entry(const char *entry)
 {
   struct {
@@ -327,7 +338,9 @@ int run_entry(const char *entry)
     { "bfast-4c", bfast_4c },
     { "bfast-5", bfast_5 },
     { "bfast-6", bfast_6 },
-    { "bfast-7b", bfast_7b }
+//    { "bfast-7a", bfast_7a },
+//    { "bfast-7b", bfast_7b },
+//    { "bfast-8", bfast_8 }
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {

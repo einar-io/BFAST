@@ -662,6 +662,7 @@ bfast_step_7a_single(float  *y_errors,
 
 
 
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -676,11 +677,11 @@ bfast_step_7a_single(float  *y_errors,
 // Output:
 //    BOUND: [N]
 
-__host__ void bfast_step_7b(float  lam, 
-                            float  hfrac, 
-                              int  n,
-                              int  N,
-                            float *BOUND)
+__host__ void bfast_step_7b(float   lam, 
+                            float   hfrac, 
+                              int   n,
+                              int   N,
+                            float **BOUND)
 {
 
   // We do this on the CPU instead, because:
@@ -704,19 +705,20 @@ __host__ void bfast_step_7b(float  lam,
     if (frac > exp(1.0)) { tmp = log(frac); }
     else                 { tmp = 1.0; }
 
-    BOUND[i] = lam * sqrt(tmp);
+    *BOUND[i] = lam * sqrt(tmp);
   }
 }
 
 extern "C" void bfast_step_7b_single(float lam, float hfrac, int n, int N, float
-    *BOUND)
+    **BOUND)
 {
 
   fprintf(stderr, "lam=%f, hfrac=%f, n=%d, N=%d\n", lam, hfrac, n, N);
   // GPU not needed for this
-  bfast_step_7b(N, n, lam, BOUND);
+  bfast_step_7b(lam, hfrac, n, N, BOUND);
 
 }
+/*
 
 
 ////////////////////////////////////////////////////////////////////////////////
