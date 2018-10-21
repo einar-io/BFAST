@@ -1,5 +1,5 @@
 
--- this test is disabled for now
+-- ==
 -- entry: bfast
 -- compiled input @ ../../data/sahara.in.gz
 -- output @ ../../data/sahara.out.gz
@@ -54,8 +54,18 @@
 -- compiled input @ ../../data/sahara-6.in.gz
 -- output @ ../../data/sahara-6.out.gz
 
+- ==
+- entry: bfast-7a
+- compiled input @ ../../data/sahara-7a.in.gz
+- output @ ../../data/sahara-7a.out.gz
+
+- ==
+- entry: bfast-7b
+- compiled input @ ../../data/sahara-7b.in.gz
+- output @ ../../data/sahara-7b.out.gz
+
 -- ==
--- entry: bfast-7b
--- compiled input @ ../../data/sahara-7b.in.gz
--- output @ ../../data/sahara-7b.out.gz
+-- entry: bfast-8
+-- compiled input @ ../../data/sahara-8.in.gz
+-- output @ ../../data/sahara-8.out.gz
 
