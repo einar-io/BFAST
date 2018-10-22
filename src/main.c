@@ -446,8 +446,7 @@ int main(int argc, const char **argv)
       }
       i++; continue;
     } else {
-      fprintf(stderr, "unexpected parameter \"%s\"\n", argv[i]);
-      return 1;
+      // ignore other parameters
     }
   }
 
