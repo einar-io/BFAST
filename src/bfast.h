@@ -17,5 +17,7 @@ struct bfast_out {
   int64_t shp[2];
 };
 
+extern int num_runs;
+extern int print_individual;
 
 #endif // BFAST_H

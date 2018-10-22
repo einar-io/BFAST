@@ -35,6 +35,9 @@ extern void bfast_step_8_single(float *y_errors, int *val_indss, int *Nss, int
 // runtimes), use this.
 FILE *out = NULL;
 
+int num_runs;
+int print_individual;
+
 #define BFAST_ASSERT(x) do { \
   if (!(x)) { \
     panic(-1, "%s:%d: Assertion failed:\n\t%s\n", __FILE__, __LINE__, #x); \
@@ -415,14 +418,36 @@ int main(int argc, const char **argv)
 
   const char *entry = NULL;
   const char *out_file = NULL;
+
+  num_runs = 0;
+  print_individual = 0;
+
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-e") == 0 && i < argc - 1) {
       entry = argv[i + 1];
       i++; continue;
-    }
-    if (strcmp(argv[i], "-o") == 0 && i < argc - 1) {
+    } else if (strcmp(argv[i], "-o") == 0 && i < argc - 1) {
       out_file = argv[i + 1];
       i++; continue;
+    } else if (strcmp(argv[i], "-r") == 0 && i < argc - 1) {
+      num_runs = atoi(argv[i + 1]);
+      if (num_runs <= 0) {
+        fprintf(stderr, "Number of runs must be positive, not %n\n",num_runs);
+        return 1;
+      }
+      i++; continue;
+    } else if (strcmp(argv[i], "-i") == 0 && i < argc - 1) {
+      if (strcmp(argv[i + 1], "0") == 0) {
+        print_individual = 0;
+      } else if (strcmp(argv[i + 1], "1") == 0) {
+        print_individual = 1;
+      } else {
+        fprintf(stderr, "Flag must be 0 or 1, not %s\n", argv[i + 1]);
+      }
+      i++; continue;
+    } else {
+      fprintf(stderr, "unexpected parameter \"%s\"\n", argv[i]);
+      return 1;
     }
   }
 
