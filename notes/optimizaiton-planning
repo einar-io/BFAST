@@ -1,0 +1,43 @@
+
+  bfast_step_1 took      10.40 us (average of 10 runs)
+  bfast_step_2 took   17090.60 us (average of 10 runs)
+  bfast_step_3 took    2915.70 us (average of 10 runs)
+ bfast_step_4a took    5902.60 us (average of 10 runs)
+ bfast_step_4b took     400.40 us (average of 10 runs)
+ bfast_step_4c took   10918.50 us (average of 10 runs)
+  bfast_step_5 took    5173.20 us (average of 10 runs)
+  bfast_step_6 took    6000.90 us (average of 10 runs)
+ bfast_step_7a took    3313.00 us (average of 10 runs)
+ bfast_step_7b took       9.80 us (average of 10 runs)
+  bfast_step_8 took    6785.90 us (average of 10 runs)
+
+
+
+
+Above 10k:
+  step_2    Einar
+  step_4c   Jakob
+
+Above 2k:
+  step_8    Einar
+  step_6    Einar
+  step_4a   Jakob
+  step_5    Jakob
+  step_7a
+  step_3
+
+Less than 500:
+  step_4b
+  step_7b
+  step_1
+
+
+
+
+Jakob: reduce
+
+pmph-bog coalesced access einar
+
+
+--------------------------------------------------------------------------------
+
