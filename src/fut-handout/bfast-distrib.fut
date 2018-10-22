@@ -1,7 +1,7 @@
 -- BFAST-irregular: version handling obscured observations (e.g., clouds)
 -- ==
--- compiled input @ data/sahara.in.gz
--- output @ data/sahara.out.gz
+-- compiled input @ ../../data/sahara.in.gz
+-- output @ ../../data/sahara.out.gz
 
 let logplus (x: f32) : f32 =
   if x > (f32.exp 1)

@@ -1,7 +1,6 @@
 #include <cstdio>
 #include <cstdint>
 #include <cassert>
-#include "bfast.h"
 #include "bfast-helpers.cu.h"
 #define INVALID_INDEX (-1)
 
@@ -957,77 +956,137 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
   CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
 
-  {
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
-    bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
+  CUDA_SUCCEED(cudaDeviceSynchronize());
+
+  struct timer bfast_timer;
+  struct timer kernel_timer[11];
+  timer_reset(&bfast_timer);
+  for (int i = 0; i < sizeof(kernel_timer)/sizeof(kernel_timer[0]); i++) {
+    timer_reset(&kernel_timer[i]);
   }
 
-  {
-    transpose(d_X, d_Xt, k2p2, N);
-    dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-    dim3 grid(m, 1, 1);
-    bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+  for (int i = 0; i < num_runs; i++) {
+    if (!print_individual) { timer_start(&bfast_timer); }
+
+    {
+      timer_individual_start(kernel_timer, 0);
+      dim3 block(16, 16, 1);
+      dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
+      bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
+      timer_individual_stop(kernel_timer, 0);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 1);
+      transpose(d_X, d_Xt, k2p2, N);
+      dim3 block(8, 8, 1); // Assumes k2p2 <= 8
+      dim3 grid(m, 1, 1);
+      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+      timer_individual_stop(kernel_timer, 1);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 2);
+      dim3 block(16, 8, 1); // Assumes k2p2 <= 8
+      dim3 grid(m, 1, 1);
+      const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
+      bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
+      timer_individual_stop(kernel_timer, 2);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 3);
+      transpose(d_Y, d_Yt, m, N);
+      dim3 block(16, 16, 1);
+      dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
+      bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
+      transpose(d_beta0t, d_beta0, k2p2, m);
+      timer_individual_stop(kernel_timer, 3);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 4);
+      dim3 block(8, 1, 1); // Assumes k2p2 <= 8
+      dim3 grid(m, 1, 1);
+      bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
+      timer_individual_stop(kernel_timer, 4);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 5);
+      transpose(d_beta, d_betat, m, k2p2);
+      dim3 block(16, 16, 1);
+      dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
+      bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
+      transpose(d_y_predst, d_y_preds, N, m);
+      timer_individual_stop(kernel_timer, 5);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 6);
+      dim3 block(1024, 1, 1);
+      dim3 grid(m, 1, 1);
+      bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
+      timer_individual_stop(kernel_timer, 6);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 7);
+      dim3 block(1024, 1, 1);
+      dim3 grid(m, 1, 1);
+      bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
+      timer_individual_stop(kernel_timer, 7);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 8);
+      dim3 block(1024, 1, 1);
+      dim3 grid(m, 1, 1);
+      bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
+      timer_individual_stop(kernel_timer, 8);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 9);
+      dim3 block(1024, 1, 1);
+      dim3 grid(1, 1, 1);
+      bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
+      timer_individual_stop(kernel_timer, 9);
+    }
+
+    {
+      timer_individual_start(kernel_timer, 10);
+      dim3 block(1024, 1, 1);
+      dim3 grid(m, 1, 1);
+      bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
+          d_sigmas, d_MO_fsts, d_BOUND, h, n, N, d_breakss);
+      timer_individual_stop(kernel_timer, 10);
+    }
+
+    if (!print_individual) { timer_stop(&bfast_timer); }
   }
 
-  {
-    dim3 block(16, 8, 1); // Assumes k2p2 <= 8
-    dim3 grid(m, 1, 1);
-    const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
-    bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
-  }
-
-  {
-    transpose(d_Y, d_Yt, m, N);
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
-    bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
-    transpose(d_beta0t, d_beta0, k2p2, m);
-  }
-
-  {
-    dim3 block(8, 1, 1); // Assumes k2p2 <= 8
-    dim3 grid(m, 1, 1);
-    bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
-  }
-
-  {
-    transpose(d_beta, d_betat, m, k2p2);
-    dim3 block(16, 16, 1);
-    dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
-    bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
-    transpose(d_y_predst, d_y_preds, N, m);
-  }
-
-  {
-    dim3 block(1024, 1, 1);
-    dim3 grid(m, 1, 1);
-    bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
-  }
-
-  {
-    dim3 block(1024, 1, 1);
-    dim3 grid(m, 1, 1);
-    bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
-  }
-
-  {
-    dim3 block(1024, 1, 1);
-    dim3 grid(m, 1, 1);
-    bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
-  }
-
-  {
-    dim3 block(1024, 1, 1);
-    dim3 grid(1, 1, 1);
-    bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
-  }
-
-  {
-    dim3 block(1024, 1, 1);
-    dim3 grid(m, 1, 1);
-    bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
-        d_sigmas, d_MO_fsts, d_BOUND, h, n, N, d_breakss);
+  if (print_individual) {
+    for (int i = 0; i < sizeof(kernel_timer)/sizeof(kernel_timer[0]); i++) {
+      const char *kernel_name;
+      switch (i) {
+      case 0:   kernel_name = "bfast_step_1";  break;
+      case 1:   kernel_name = "bfast_step_2";  break;
+      case 2:   kernel_name = "bfast_step_3";  break;
+      case 3:   kernel_name = "bfast_step_4a"; break;
+      case 4:   kernel_name = "bfast_step_4b"; break;
+      case 5:   kernel_name = "bfast_step_4c"; break;
+      case 6:   kernel_name = "bfast_step_5";  break;
+      case 7:   kernel_name = "bfast_step_6";  break;
+      case 8:   kernel_name = "bfast_step_7a"; break;
+      case 9:   kernel_name = "bfast_step_7b"; break;
+      case 10:  kernel_name = "bfast_step_8";  break;
+      default:  assert(0);
+      }
+      timer_report(&kernel_timer[i], kernel_name);
+    }
+  } else {
+    timer_report(&bfast_timer, "bfast");
   }
 
   
