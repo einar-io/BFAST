@@ -9,26 +9,52 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix transposition
 
-__global__ void transpose_kernel(float *A, float *B, int heightA, int widthA)
+template <class ElTp, int T>
+__global__ void transpose_tiled_kernel(ElTp* A, ElTp* B,
+                                       int heightA, int widthA)
 {
+  extern __shared__ char sh_mem1[];
+  volatile ElTp *tile = (volatile ElTp *)sh_mem1;
 
-  int gidx = blockIdx.x * blockDim.x + threadIdx.x;
-  int gidy = blockIdx.y * blockDim.y + threadIdx.y;
+  int x = blockIdx.x * T + threadIdx.x;
+  int y = blockIdx.y * T + threadIdx.y;
 
-  if(gidx >= widthA || gidy >= heightA) {
-    return;
+  if (x < widthA && y < heightA) {
+    tile[threadIdx.y*(T+1) + threadIdx.x] = A[y*widthA + x];
   }
 
-  B[IDX_2D(gidx, gidy, heightA)] = A[IDX_2D(gidy, gidx, widthA)];
+  __syncthreads();
+
+  x = blockIdx.y * T + threadIdx.x;
+  y = blockIdx.x * T + threadIdx.y;
+
+  if (x < heightA && y < widthA) {
+    B[y*heightA + x] = tile[threadIdx.x*(T+1) + threadIdx.y];
+  }
+}
+
+template<class ElTp, int T>
+void transpose_tiled ( ElTp*              d_in,
+                       ElTp*              d_out,
+                       const unsigned int height,
+                       const unsigned int width)
+{
+   // 1. setup block and grid parameters
+   unsigned int sh_mem_size = T * (T+1) * sizeof(ElTp);
+   int  dimy = (height+T-1) / T;
+   int  dimx = (width +T-1) / T;
+   dim3 block(T, T, 1);
+   dim3 grid (dimx, dimy, 1);
+
+   //2. execute the kernel
+   transpose_tiled_kernel<ElTp,T><<<grid, block, sh_mem_size>>>
+                                 (d_in, d_out, height, width);
+   cudaDeviceSynchronize();
 }
 
 void transpose(float *d_A, float *d_B, int heightA, int widthA)
 {
-  dim3 block(16, 16, 1);
-  dim3 grid(CEIL_DIV(widthA, block.x),
-            CEIL_DIV(heightA, block.y),
-            1);
-  transpose_kernel<<<grid, block>>>(d_A, d_B, heightA, widthA);
+  transpose_tiled<float, 32>(d_A, d_B, heightA, widthA);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,7 +168,7 @@ extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
 
 #define STEP_2_TILE_SIZE 28
 
-__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
+__global__ void bfast_step_2(float *Xh, float *Xth, float *Yth, float *Xsqr,
     int N, int n, int k2p2, int m)
 {
   // Grid: (CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1)
@@ -167,7 +193,7 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
     if (ysh_idx < STEP_2_TILE_SIZE) {
       int y_row = blockIdx.x * STEP_2_TILE_SIZE + ysh_idx;
       if (y_row < m) {
-        ysh[ysh_idx] = Yh[IDX_2D(y_row, i, N)];
+        ysh[ysh_idx] = Yth[IDX_2D(i, y_row, N)];
       } else {
         ysh[ysh_idx] = 0.0;
       }
@@ -193,7 +219,8 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
 extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
     float **Xsqr, int N, int n, int k2p2, int m)
 {
-  float *d_X = NULL, *d_Xt = NULL, *d_Y = NULL, *d_Xsqr = NULL;
+  // XXX: This function should actually take Yt as input, not Y!
+  float *d_X = NULL, *d_Xt = NULL, *d_Y = NULL, *d_Yt = NULL, *d_Xsqr = NULL;
   const size_t mem_X = k2p2 * N * sizeof(float);
   const size_t mem_Y = m * N * sizeof(float);
   const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
@@ -201,15 +228,18 @@ extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
   CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
   CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_X));
   CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
+  CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Y));
   CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
 
   CUDA_SUCCEED(cudaMemcpy(d_X, X, mem_X, cudaMemcpyHostToDevice));
   CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_X, cudaMemcpyHostToDevice));
   CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
 
+  transpose(d_Y, d_Yt, m, N);
+
   dim3 block(8, 8, 1); // Assumes k2p2 <= 8
   dim3 grid(CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1);
-  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2, m);
+  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Yt, d_Xsqr, N, n, k2p2, m);
 
   *Xsqr = (float *)malloc(mem_Xsqr);
   CUDA_SUCCEED(cudaMemcpy(*Xsqr, d_Xsqr, mem_Xsqr, cudaMemcpyDeviceToHost));
@@ -699,7 +729,6 @@ __global__ void bfast_step_7a(float *y_errors,
                                 int  N,
                               float *MO_fsts)
 {
-
   // Grid:  (m, 1, 1)
   // Block: (1024, 1, 1)
 
@@ -1057,9 +1086,10 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
     {
       timer_individual_start(kernel_timer, 1);
       transpose(d_X, d_Xt, k2p2, N);
+      transpose(d_Y, d_Yt, m, N);
       dim3 block(8, 8, 1); // Assumes k2p2 <= 8
       dim3 grid(CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1);
-      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2, m);
+      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Yt, d_Xsqr, N, n, k2p2, m);
       timer_individual_stop(kernel_timer, 1);
     }
 
@@ -1074,7 +1104,6 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 3);
-      transpose(d_Y, d_Yt, m, N);
       dim3 block(16, 16, 1);
       dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
       bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
