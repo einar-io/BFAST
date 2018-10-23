@@ -153,6 +153,7 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
   }
 
   float accum[STEP_2_TILE_SIZE];
+  __shared__ float ysh[STEP_2_TILE_SIZE];
 
   for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
     accum[t] = 0.0;
@@ -161,9 +162,20 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
   for (int i = 0; i < n; i++) {
     float val = Xh[IDX_2D(threadIdx.y, i, N)]
                   * Xth[IDX_2D(i, threadIdx.x, k2p2)];
+
+    int ysh_idx = IDX_2D(threadIdx.y, threadIdx.x, k2p2);
+    if (ysh_idx < STEP_2_TILE_SIZE) {
+      int y_row = blockIdx.x * STEP_2_TILE_SIZE + ysh_idx;
+      if (y_row < m) {
+        ysh[ysh_idx] = Yh[IDX_2D(y_row, i, N)];
+      } else {
+        ysh[ysh_idx] = 0.0;
+      }
+    }
+    __syncthreads();
+
     for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
-      int mat_idx = blockIdx.x * STEP_2_TILE_SIZE + t;
-      if (mat_idx < m && !isnan(Yh[IDX_2D(mat_idx, i, N)])) {
+      if (!isnan(ysh[t])) {
         accum[t] += val;
       }
     }
