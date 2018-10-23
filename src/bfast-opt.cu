@@ -415,7 +415,7 @@ extern "C" void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
 //  Step 4c: Calculating y_preds
 //
 // Input:
-//   Xt:      [N][k2p2]f32
+//   X:       [k2p2][N]f32
 //   beta:    [m][k2p2]f32
 // Output:
 //   y_preds: [m][N]f32
@@ -423,61 +423,58 @@ extern "C" void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
 // Similar reasoning as in 4a. Consider merging these two kernels, the only
 // difference is the filtering.
 //
-// The kernel will take as input Xt and betat, and it will output y_predst:
-//     [N][k2p2] multiplied with [k2p2][m] is [N][m]
+// Perform matrix-matrix multiplication between X and beta.
 
-__global__ void bfast_step_4c(float *Xt, float *betat, float *y_predst,
+__global__ void bfast_step_4c(float *X, float *beta, float *y_preds,
     int N, int m, int k2p2)
 {
   int gidy = blockIdx.y * blockDim.y + threadIdx.y;
   int gidx = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if(gidy >= N || gidx >= m) {
+  if(gidy >= m || gidx >= N) {
     return;
   }
 
   float accum = 0.0;
   for(int k = 0; k < k2p2; k ++) {
-    accum += Xt[IDX_2D(gidy, k, k2p2)] * betat[IDX_2D(k, gidx, m)];
+    accum += beta[IDX_2D(gidy, k, k2p2)] * X[IDX_2D(k, gidx, N)];
   }
 
-  y_predst[IDX_2D(gidy, gidx, m)] = accum;
+  y_preds[IDX_2D(gidy, gidx, N)] = accum;
 }
 
 extern "C" void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
     int m, int N, int k2p2)
 {
-  float *d_Xt = NULL, *d_beta = NULL, *d_betat = NULL;
-  float *d_y_preds = NULL, *d_y_predst = NULL;
+  // XXX: This function should actually take X as input, not Xt!
+  float *d_Xt = NULL, *d_beta = NULL, *d_X = NULL;
+  float *d_y_preds = NULL;
   const size_t mem_Xt = N * k2p2 * sizeof(float);
   const size_t mem_beta = m * k2p2 * sizeof(float);
   const size_t mem_y_preds = m * N * sizeof(float);
 
+  CUDA_SUCCEED(cudaMalloc(&d_X, mem_Xt));
   CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_Xt));
   CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
-  CUDA_SUCCEED(cudaMalloc(&d_betat, mem_beta));
   CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
-  CUDA_SUCCEED(cudaMalloc(&d_y_predst, mem_y_preds));
 
   CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_Xt, cudaMemcpyHostToDevice));
   CUDA_SUCCEED(cudaMemcpy(d_beta, beta, mem_beta, cudaMemcpyHostToDevice));
 
-  transpose(d_beta, d_betat, m, k2p2);
+  transpose(d_Xt, d_X, N, k2p2);
 
   dim3 block(16, 16, 1);
-  dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
-  bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
+  dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(m, block.y), 1);
+  bfast_step_4c<<<grid, block>>>(d_X, d_beta, d_y_preds, N, m, k2p2);
 
-  transpose(d_y_predst, d_y_preds, N, m);
 
   *y_preds = (float *)malloc(mem_y_preds);
   CUDA_SUCCEED(cudaMemcpy(*y_preds, d_y_preds, mem_y_preds,
         cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaFree(d_X));
   CUDA_SUCCEED(cudaFree(d_Xt));
   CUDA_SUCCEED(cudaFree(d_beta));
-  CUDA_SUCCEED(cudaFree(d_betat));
   CUDA_SUCCEED(cudaFree(d_y_preds));
-  CUDA_SUCCEED(cudaFree(d_y_predst));
 }
 
 
@@ -745,7 +742,7 @@ bfast_step_7a_single(float  *y_errors,
 // Output:
 //    BOUND: [N-n]
 
-__global__ void bfast_step_7b(float lam,
+__host__ void bfast_step_7b(float   lam,
                               int   n,
                               int   N,
                             float  *BOUND)
@@ -755,9 +752,7 @@ __global__ void bfast_step_7b(float lam,
   // Block: (1024, 1, 1)
   int monitor_period_max_idx = N-n-1;
 
-  unsigned int i = threadIdx.x;
-  
-  if ( i <= monitor_period_max_idx ) {
+  for (int i = 0; i <= monitor_period_max_idx; i++) {
 
     // Index into monitor period
     unsigned int t = n + 1 + i;
@@ -776,28 +771,11 @@ __global__ void bfast_step_7b(float lam,
 extern "C" void bfast_step_7b_single(float lam, int n, int N, float
     **BOUND)
 {
-  float *d_BOUND = NULL;
-
-  const size_t mem_BOUND = (N - n)  * sizeof(float);
-  
-  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
-
-  CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
 
   fprintf(stderr, "lam=%f, n=%d, N=%d\n", lam, n, N);
   // GPU not needed for this
-  //  *BOUND = (float *)malloc((N - n) * sizeof(float));
-  // bfast_step_7b(lam, n, N, *BOUND);
-
-  dim3 grid(1, 1, 1);
-  dim3 block(1024, 1, 1);
-  bfast_step_7b<<<grid, block>>>(lam, n, N, *BOUND);
-
-  *BOUND = (float *)malloc(mem_BOUND);
-
-  CUDA_SUCCEED(cudaMemcpy(BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_BOUND));
+  *BOUND = (float *)malloc((N - n) * sizeof(float));
+  bfast_step_7b(lam, n, N, *BOUND);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -855,7 +833,7 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   {
     unsigned int j = threadIdx.x;
     if      ( Ns-ns <= j ) { MO_shr[j] = 0.0f; }
-    else if ( j     == 0 ) { MO_shr[j] = MO_fst; }
+    else if ( j == 0     ) { MO_shr[j] = MO_fst; }
     else                   { MO_shr[j] = -y_error[ns - h + j] + y_error[ns + j]; }
     __syncthreads();
     scaninc_block_add<float>(MO_shr);
@@ -1088,11 +1066,9 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 5);
-      transpose(d_beta, d_betat, m, k2p2);
       dim3 block(16, 16, 1);
-      dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
-      bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
-      transpose(d_y_predst, d_y_preds, N, m);
+      dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(m, block.y), 1);
+      bfast_step_4c<<<grid, block>>>(d_X, d_beta, d_y_preds, N, m, k2p2);
       timer_individual_stop(kernel_timer, 5);
     }
 
@@ -1122,9 +1098,10 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 9);
-      dim3 block(1024, 1, 1);
-      dim3 grid(1, 1, 1);
-      bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
+      float *BOUND = (float *)malloc(mem_BOUND);
+      bfast_step_7b(lam, n, N, BOUND);
+      CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
+      free(BOUND);
       timer_individual_stop(kernel_timer, 9);
     }
 
@@ -1162,8 +1139,6 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   } else {
     timer_report(&bfast_timer, "bfast");
   }
-
-  
 
   out->breakss = (float *)malloc(m * (N - n) * sizeof(float));
   out->breakss[0] = 0.0;

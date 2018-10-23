@@ -419,7 +419,7 @@ int main(int argc, const char **argv)
   const char *entry = NULL;
   const char *out_file = NULL;
 
-  num_runs = 0;
+  num_runs = 1;
   print_individual = 0;
 
   for (int i = 1; i < argc; i++) {
