@@ -140,28 +140,42 @@ extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
 //   Xsqr: [m][k2p2][k2p2]f32
 //
 
-__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
-    int N, int n, int k2p2)
-{
-  // Grid: (m, 1, 1)
-  // Block: (k2p2, k2p2, 1)
+#define STEP_2_TILE_SIZE 28
 
-  float *yh = &Yh[blockIdx.x * N];
-  float accum = 0.0;
+__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
+    int N, int n, int k2p2, int m)
+{
+  // Grid: (CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1)
+  // Block: (k2p2, k2p2, 1)
 
   if (threadIdx.y >= k2p2 || threadIdx.x >= k2p2) {
     return;
   }
 
-  for (int k = 0; k < n; k++) {
-    if (!isnan(yh[k])) {
-      accum += Xh[IDX_2D(threadIdx.y, k, N)] *
-                 Xth[IDX_2D(k, threadIdx.x, k2p2)];
+  float accum[STEP_2_TILE_SIZE];
+
+  for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
+    accum[t] = 0.0;
+  }
+
+  for (int i = 0; i < n; i++) {
+    float val = Xh[IDX_2D(threadIdx.y, i, N)]
+                  * Xth[IDX_2D(i, threadIdx.x, k2p2)];
+    for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
+      int mat_idx = blockIdx.x * STEP_2_TILE_SIZE + t;
+      if (mat_idx < m && !isnan(Yh[IDX_2D(mat_idx, i, N)])) {
+        accum[t] += val;
+      }
     }
   }
 
-  float *out_mat = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
-  out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
+  for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
+    int mat_idx = blockIdx.x * STEP_2_TILE_SIZE + t;
+    if (mat_idx < m) {
+      Xsqr[mat_idx * k2p2 * k2p2 + IDX_2D(threadIdx.y, threadIdx.x, k2p2)]
+        = accum[t];
+    }
+  }
 }
 
 extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
@@ -182,8 +196,8 @@ extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
   CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
 
   dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-  dim3 grid(m, 1, 1);
-  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+  dim3 grid(CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1);
+  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2, m);
 
   *Xsqr = (float *)malloc(mem_Xsqr);
   CUDA_SUCCEED(cudaMemcpy(*Xsqr, d_Xsqr, mem_Xsqr, cudaMemcpyDeviceToHost));
@@ -1032,8 +1046,8 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
       timer_individual_start(kernel_timer, 1);
       transpose(d_X, d_Xt, k2p2, N);
       dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-      dim3 grid(m, 1, 1);
-      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+      dim3 grid(CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1);
+      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2, m);
       timer_individual_stop(kernel_timer, 1);
     }
 
