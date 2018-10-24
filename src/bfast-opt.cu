@@ -809,13 +809,13 @@ __global__ void bfast_step_7b(float lam,
   if ( threadIdx.x < monitor_period_sz ) {
 
     // Index into monitor period
-    unsigned int t = n + 1 + i;
+    unsigned int t = n + 1 + threadIdx.x;
 
     float frac = t/(float)n;
 
     // logplus(frac). Assures `tmp` is at least 1.
-    if (frac > __expf(1.0f)) { BOUND[i] = lam (__fsqrtf_rd( __logf(frac)); }
-    else                     { BOUND[i] = 1.0f; }
+    if (frac > __expf(1.0f)) { BOUND[threadIdx.x] = lam * __fsqrt_rd( __logf(frac)); }
+    else                     { BOUND[threadIdx.x] = 1.0f; }
 
   }
 }
