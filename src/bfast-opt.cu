@@ -936,29 +936,21 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   */
 
   float m;
+  float b; // = BOUND   [threadIdx.x];
 
-  if (threadIdx.x < Ns - ns) { 
+  if (threadIdx.x < Ns - ns && !isnan(( b = BOUND[threadIdx.x] ))) { 
     int val_ind = val_inds[threadIdx.x + ns] - n;
     m = MO_shr[val_ind];
+    breaks[threadIdx.x] = fabsf(m) - b; 
   }
-  else {
-    m = NAN;
+  else { // (m == NAN || b == NAN)
+    breaks[threadIdx.x] = 0.0f; 
   }
 
-  {
-    __syncthreads();
-    // float m = MOPP_shr[threadIdx.x];
-    float b = BOUND   [threadIdx.x];
-
-    if (isnan(m) || isnan(b)) { breaks[threadIdx.x] = 0.0f; }
-    else                      { breaks[threadIdx.x] = fabsf(m) - b; }
-  }
 }
 
 
 
-
-}
 
 extern "C" void
 bfast_step_8_single(float  *y_errors,  // [m][N]
