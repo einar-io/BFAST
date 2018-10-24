@@ -900,6 +900,7 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
     MO_shr[threadIdx.x] /= sigma * sqrtf( (float)ns );
   }
 
+  /*
   __shared__ int val_indsP[1024];
   {
     // val_inds'
@@ -932,6 +933,31 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
     if (isnan(m) || isnan(b)) { breaks[threadIdx.x] = 0.0f; }
     else                      { breaks[threadIdx.x] = fabsf(m) - b; }
   }
+  */
+
+  float m;
+
+  if (threadIdx.x < Ns - ns) { 
+    int val_ind = val_inds[threadIdx.x + ns] - n;
+    m = MO_shr[val_ind];
+  }
+  else {
+    m = NAN;
+  }
+
+  {
+    __syncthreads();
+    // float m = MOPP_shr[threadIdx.x];
+    float b = BOUND   [threadIdx.x];
+
+    if (isnan(m) || isnan(b)) { breaks[threadIdx.x] = 0.0f; }
+    else                      { breaks[threadIdx.x] = fabsf(m) - b; }
+  }
+}
+
+
+
+
 }
 
 extern "C" void
