@@ -881,7 +881,7 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   // Block: (1024, 1, 1)
 
   // Optimization opportunities:
-  // Read bound into shared memory
+  // Done. Read bound into shared memory.
   // Reuse shared memory for MO MOP MOPP
   // Reuse threadIdx.x instead of copying to local variable.
 
@@ -895,13 +895,21 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   float *y_error  = &y_errors [blockIdx.x * N];
   int   *val_inds = &val_indss[blockIdx.x * N];
   float *breaks   = &breakss  [blockIdx.x * (N-n)];
+  float val;
+
+
+  __shared__ float BOUND_shr[1024];
+  
+  if (threadIdx.x < N) {
+    BOUND_shr[threadIdx.x] = BOUND[threadIdx.x];
+  }
 
   __shared__ float MO_shr[1024];
   {
-    unsigned int j = threadIdx.x;
-    if      ( Ns-ns <= j ) { MO_shr[j] = 0.0f; }
-    else if ( j == 0     ) { MO_shr[j] = MO_fst; }
-    else                   { MO_shr[j] = -y_error[ns - h + j] + y_error[ns + j]; }
+    if      ( Ns-ns       <= threadIdx.x ) { MO_shr[threadIdx.x] = 0.0f;   }
+    else if ( threadIdx.x == 0           ) { MO_shr[threadIdx.x] = MO_fst; }
+    else                   { MO_shr[threadIdx.x] = -y_error[ns - h + threadIdx.x] 
+                                                  + y_error[ns + threadIdx.x]; }
     __syncthreads();
     scaninc_block_add<float>(MO_shr);
   }
@@ -909,42 +917,40 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   {
     // MO'
     __syncthreads();
-    MO_shr[threadIdx.x] /= sigma * sqrtf( (float)ns );
+    MO_shr[threadIdx.x] /= sigma * __fsqrt_rd( (float)ns );
   }
 
-  __shared__ int val_indsP[1024];
   {
-    // val_inds'
-    unsigned int i = threadIdx.x;
-    __syncthreads();
-      if      ( i < Ns - ns ) { val_indsP[i] = val_inds[i + ns] - n; }
-      else                    { val_indsP[i] = INVALID_INDEX; }
-  }
-
-  __shared__ float MOPP_shr[1024];
-  {
-    // MO'' = scatter ..
-    // NAN initialize
-    __syncthreads();
-    MOPP_shr[threadIdx.x] = NAN;
     __syncthreads();
 
-    int k = val_indsP[threadIdx.x];
-    if ( !(k == INVALID_INDEX) ) {
-      MOPP_shr[k] = MO_shr[threadIdx.x];
+    if ( threadIdx.x < Ns - ns ) {
+      val = MO_shr[threadIdx.x];
     }
+    else {
+      val = NAN;
+    }
+
+    // Make sure all threads has read into `val` before overwriting source.
+    __syncthreads();
+    MO_shr[val_inds[threadIdx.x + ns] - n] = val;
   }
+
+  // Here might be a producer/consumer dependency in MO_shr.
 
   {
     // breaks = ..
     __syncthreads();
-    float m = MOPP_shr[threadIdx.x];
-    float b = BOUND   [threadIdx.x];
+    float m = MO_shr   [threadIdx.x];
+    float b = BOUND_shr[threadIdx.x];
 
     if (isnan(m) || isnan(b)) { breaks[threadIdx.x] = 0.0f; }
     else                      { breaks[threadIdx.x] = fabsf(m) - b; }
   }
+
 }
+
+
+
 
 extern "C" void
 bfast_step_8_single(float  *y_errors,  // [m][N]
