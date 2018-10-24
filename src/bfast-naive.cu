@@ -745,7 +745,7 @@ bfast_step_7a_single(float  *y_errors,
 // Output:
 //    BOUND: [N-n]
 
-__host__ void bfast_step_7b(float   lam,
+__global__ void bfast_step_7b(float lam,
                               int   n,
                               int   N,
                             float  *BOUND)
@@ -755,7 +755,9 @@ __host__ void bfast_step_7b(float   lam,
   // Block: (1024, 1, 1)
   int monitor_period_max_idx = N-n-1;
 
-  for (int i = 0; i <= monitor_period_max_idx; i++) {
+  unsigned int i = threadIdx.x;
+  
+  if ( i <= monitor_period_max_idx ) {
 
     // Index into monitor period
     unsigned int t = n + 1 + i;
@@ -774,11 +776,28 @@ __host__ void bfast_step_7b(float   lam,
 extern "C" void bfast_step_7b_single(float lam, int n, int N, float
     **BOUND)
 {
+  float *d_BOUND = NULL;
+
+  const size_t mem_BOUND = (N - n)  * sizeof(float);
+  
+  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
+
+  CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
 
   fprintf(stderr, "lam=%f, n=%d, N=%d\n", lam, n, N);
   // GPU not needed for this
-  *BOUND = (float *)malloc((N - n) * sizeof(float));
-  bfast_step_7b(lam, n, N, *BOUND);
+  //  *BOUND = (float *)malloc((N - n) * sizeof(float));
+  // bfast_step_7b(lam, n, N, *BOUND);
+
+  dim3 grid(1, 1, 1);
+  dim3 block(1024, 1, 1);
+  bfast_step_7b<<<grid, block>>>(lam, n, N, *BOUND);
+
+  *BOUND = (float *)malloc(mem_BOUND);
+
+  CUDA_SUCCEED(cudaMemcpy(BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_BOUND));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -836,7 +855,7 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   {
     unsigned int j = threadIdx.x;
     if      ( Ns-ns <= j ) { MO_shr[j] = 0.0f; }
-    else if ( j == 0     ) { MO_shr[j] = MO_fst; }
+    else if ( j     == 0 ) { MO_shr[j] = MO_fst; }
     else                   { MO_shr[j] = -y_error[ns - h + j] + y_error[ns + j]; }
     __syncthreads();
     scaninc_block_add<float>(MO_shr);
@@ -1103,10 +1122,9 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 9);
-      float *BOUND = (float *)malloc(mem_BOUND);
-      bfast_step_7b(lam, n, N, BOUND);
-      CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
-      free(BOUND);
+      dim3 block(1024, 1, 1);
+      dim3 grid(1, 1, 1);
+      bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
       timer_individual_stop(kernel_timer, 9);
     }
 
@@ -1144,6 +1162,8 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   } else {
     timer_report(&bfast_timer, "bfast");
   }
+
+  
 
   out->breakss = (float *)malloc(m * (N - n) * sizeof(float));
   out->breakss[0] = 0.0;
