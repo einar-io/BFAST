@@ -797,41 +797,53 @@ bfast_step_7a_single(float  *y_errors,
 // Output:
 //    BOUND: [N-n]
 
-__host__ void bfast_step_7b(float   lam,
+__global__ void bfast_step_7b(float lam,
                               int   n,
                               int   N,
                             float  *BOUND)
 {
-  // We do this on the CPU instead, because:
   // Grid: (1, 1, 1)
   // Block: (1024, 1, 1)
-  int monitor_period_max_idx = N-n-1;
+  int monitor_period_sz = N-n;
 
-  for (int i = 0; i <= monitor_period_max_idx; i++) {
+  if ( threadIdx.x < monitor_period_sz ) {
 
     // Index into monitor period
     unsigned int t = n + 1 + i;
 
-    float tmp;
     float frac = t/(float)n;
 
     // logplus(frac). Assures `tmp` is at least 1.
-    if (frac > exp(1.0)) { tmp = log(frac); }
-    else                 { tmp = 1.0; }
+    if (frac > __expf(1.0f)) { BOUND[i] = lam (__fsqrtf_rd( __logf(frac)); }
+    else                     { BOUND[i] = 1.0f; }
 
-    BOUND[i] = lam * sqrt(tmp);
   }
 }
 
 extern "C" void bfast_step_7b_single(float lam, int n, int N, float
     **BOUND)
 {
+  float *d_BOUND = NULL;
+
+  const size_t mem_BOUND = (N - n)  * sizeof(float);
+  
+  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
+
+  CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
 
   fprintf(stderr, "lam=%f, n=%d, N=%d\n", lam, n, N);
-  // GPU not needed for this
-  *BOUND = (float *)malloc((N - n) * sizeof(float));
-  bfast_step_7b(lam, n, N, *BOUND);
+
+  dim3 grid(1, 1, 1);
+  dim3 block(1024, 1, 1);
+  bfast_step_7b<<<grid, block>>>(lam, n, N, *BOUND);
+
+  *BOUND = (float *)malloc(mem_BOUND);
+
+  CUDA_SUCCEED(cudaMemcpy(BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
+
+  CUDA_SUCCEED(cudaFree(d_BOUND));
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1153,10 +1165,9 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 9);
-      float *BOUND = (float *)malloc(mem_BOUND);
-      bfast_step_7b(lam, n, N, BOUND);
-      CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
-      free(BOUND);
+      dim3 block(1024, 1, 1);
+      dim3 grid(1, 1, 1);
+      bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
       timer_individual_stop(kernel_timer, 9);
     }
 
