@@ -804,18 +804,22 @@ __global__ void bfast_step_7b(float lam,
 {
   // Grid: (1, 1, 1)
   // Block: (1024, 1, 1)
-  int monitor_period_sz = N-n;
 
-  if ( threadIdx.x < monitor_period_sz ) {
+  // int monitor_period_sz = N-n;
+  if ( threadIdx.x < N-n ) {
 
     // Index into monitor period
-    unsigned int t = n + 1 + threadIdx.x;
+    //unsigned int t = n + 1 + threadIdx.x;
 
-    float frac = t/(float)n;
+    float frac = (n + 1 + threadIdx.x)/(float)n;
 
+    /*
     // logplus(frac). Assures `tmp` is at least 1.
     if (frac > __expf(1.0f)) { BOUND[threadIdx.x] = lam * __fsqrt_rd( __logf(frac)); }
-    else                     { BOUND[threadIdx.x] = 1.0f; }
+    else                     { BOUND[threadIdx.x] = lam; }
+    */
+
+    BOUND[threadIdx.x] = lam * ( frac>__expf(1.0f) ? __fsqrt_rd(__logf(frac)) : 1);
 
   }
 }
@@ -835,11 +839,11 @@ extern "C" void bfast_step_7b_single(float lam, int n, int N, float
 
   dim3 grid(1, 1, 1);
   dim3 block(1024, 1, 1);
-  bfast_step_7b<<<grid, block>>>(lam, n, N, *BOUND);
+  bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
 
   *BOUND = (float *)malloc(mem_BOUND);
 
-  CUDA_SUCCEED(cudaMemcpy(BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
+  CUDA_SUCCEED(cudaMemcpy(*BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
 
   CUDA_SUCCEED(cudaFree(d_BOUND));
 }
