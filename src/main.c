@@ -281,6 +281,8 @@ void bfast_6()
   m = Y_shp[0];
   N = Y_shp[1];
 
+  fprintf(out, "n=%d, k2p2=%d, m=%d, N=%d", n, k2p2, m, N);
+
   int *nss = NULL;
   float *sigmas = NULL;
   bfast_step_6_single(Y, y_errors, &nss, &sigmas, n, k2p2, m, N);
@@ -308,6 +310,8 @@ void bfast_7a()
   m = y_errors_shp[0];
   N = y_errors_shp[1];
 
+  fprintf(out, "h=%d, N=%d, m=%d", h, N, m);
+
   float *MO_fsts = NULL;
   bfast_step_7a_single(y_errors, nss, h, N, m, &MO_fsts);
 
@@ -326,6 +330,8 @@ void bfast_7b()
   BFAST_ASSERT(read_scalar(&i32_info, &N) == 0);
   BFAST_ASSERT(read_scalar(&i32_info, &n) == 0);
   BFAST_ASSERT(read_scalar(&f32_info, &lam) == 0);
+
+  fprintf(out, "lam=%f, n=%d, N=%d", lam, n, N);
 
   bfast_step_7b_single(lam, n, N, &BOUND);
 
@@ -452,7 +458,7 @@ int main(int argc, const char **argv)
 
   if (entry == NULL) {
     fprintf(stderr, "Usage: %s -e ENTRY [-o OUTFILE]\n", argv[0]);
-    fprintf(stderr, "  OUTFILE defaults to OUTPUT");
+    fprintf(stderr, "  OUTFILE defaults to OUTPUT\n");
     return 1;
   }
 
