@@ -612,8 +612,8 @@ extern "C" void bfast_step_5_single(float *Y, float *y_preds, int **Nss,
   CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
   CUDA_SUCCEED(cudaMemcpy(d_y_preds, y_preds, mem_y_preds, cudaMemcpyHostToDevice));
 
-  dim3 block(N, 1, 1);
   //dim3 block(1024, 1, 1);
+  dim3 block(N, 1, 1);
   dim3 grid(m, 1, 1);
   bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
 
@@ -700,7 +700,7 @@ extern "C" void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
         cudaMemcpyHostToDevice));
 
   fprintf(stderr, "n=%d, k2p2=%d, m=%d, N=%d\n", n, k2p2, m, N);
-  dim3 block(N, 1, 1);
+  dim3 block(n, 1, 1);
   dim3 grid(m, 1, 1);
   bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
 
@@ -781,7 +781,7 @@ bfast_step_7a_single(float  *y_errors,
   fprintf(stderr, "h=%d, N=%d, m=%d", h, N, m);
 
   dim3 grid(m, 1, 1);
-  dim3 block(N, 1, 1);
+  dim3 block(h, 1, 1);
   bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
 
   *MO_fsts = (float *)malloc(mem_MO_fsts);
@@ -844,7 +844,7 @@ extern "C" void bfast_step_7b_single(float lam, int n, int N, float
   fprintf(stderr, "lam=%f, n=%d, N=%d\n", lam, n, N);
 
   dim3 grid(1, 1, 1);
-  dim3 block(N, 1, 1);
+  dim3 block(N-n, 1, 1);
   bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
 
   *BOUND = (float *)malloc(mem_BOUND);
@@ -914,11 +914,13 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
     BOUND_shr[threadIdx.x] = BOUND[threadIdx.x];
   }
 
+  /*
   __shared__ int val_inds_shr[1024];
   
   if (threadIdx.x < N) {
     val_inds_shr[threadIdx.x] = val_inds[threadIdx.x];
   }
+  */
 
   __shared__ float MO_shr[1024];
   {
@@ -950,11 +952,14 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
 
     // Make sure all threads has read into `val` before overwriting source.
     __syncthreads();
+    MO_shr[val_inds[threadIdx.x + ns] - n] = val; 
 
-    int idx = val_inds_shr[threadIdx.x + ns] - n;
+    /*
+    int idx = val_inds[threadIdx.x + ns] - n;
     if ( 0 <= idx && idx < 1024 ){
       MO_shr[idx] = val;
     }
+    */
   }
 
   // Here might be a producer/consumer dependency in MO_shr.
@@ -1203,7 +1208,7 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
 
     {
       timer_individual_start(kernel_timer, 10);
-      dim3 block(N, 1, 1);
+      dim3 block(N-n, 1, 1);
       dim3 grid(m, 1, 1);
       bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
           d_sigmas, d_MO_fsts, d_BOUND, h, n, N, d_breakss);
