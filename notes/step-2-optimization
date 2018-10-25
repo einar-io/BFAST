@@ -1,0 +1,200 @@
+
+
+
+
+// Yh:  [m][n]f32
+// Xh:  [k2p2][n]f32
+// Xth: [n][k2p2]f32
+// Xsqr: [m][k2p2][k2p2]f32
+
+////////////////////////////////////////////////////////////////////////////////
+// Naive
+
+for (int i = 0; i < m; i++) {           // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {      // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+      float accum = 0.0;
+      for (int l = 0; l < n; l++) {     // sequential
+        if (!isnan(Yh[i,l])) {
+          accum += Xh[y,l] * Xth[l,x];
+        }
+      }
+      Xsqr[i, y, x] = accum;
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stripmine with a tile size T
+
+for (int i = 0; i < m; i += T) {          // blockIdx.x
+  for (int ii = 0; ii < T; ii++) {        // sequential
+    for (int y = 0; y < k2p2; y++) {      // threadIdx.y
+      for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+        float accum = 0.0;
+        for (int l = 0; l < n; l++) {     // sequential
+          if (!isnan(Yh[i+ii,l])) {
+            accum += Xh[y,l] * Xth[l,x];
+          }
+        }
+        Xsqr[i+ii, y, x] = accum;
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Interchange ii-loop inwards.
+
+for (int i = 0; i < m; i += T) {          // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        float accum = 0.0;
+        for (int l = 0; l < n; l++) {     // sequential
+          if (!isnan(Yh[i+ii,l])) {
+            accum += Xh[y,l] * Xth[l,x];
+          }
+        }
+        Xsqr[i+ii, y, x] = accum;
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Distribute (with array expansion of accum)
+
+for (int i = 0; i < m; i += T) {        // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {      // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {  // sequential
+        accum[ii] = 0.0;
+      }
+      for (int ii = 0; ii < T; ii++) {  // sequential
+        for (int l = 0; l < n; l++) {   // sequential
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] += Xh[y,l] * Xth[l,x];
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {  // sequential
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Interchange
+
+for (int i = 0; i < m; i += T) {        // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {       // sequential
+        for (int ii = 0; ii < T; ii++) {  // sequential
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] += Xh[y,l] * Xth[l,x];
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Hoist multiplication
+
+for (int i = 0; i < m; i += T) {        // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {       // sequential
+        float val = Xh[y,l] * Xth[l,x];
+        for (int ii = 0; ii < T; ii++) {  // sequential
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// We observe that the T elements accessed in Yh in the ii-loop are invariant
+// within each block (it changes with the outermost loop). Thus, instead of
+// having every thread in the block access the same elements of Yh, the
+// necessary elements from Yh can be read into shared  memory before the
+// ii-loop.
+
+for (int i = 0; i < m; i += T) {        // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {       // sequential
+        float val = Xh[y,l] * Xth[l,x];
+        __shared__ float Ysh[T];
+        // Copy slice Yh[i:i+T, l] into Ysh
+        for (int ii = 0; ii < T; ii++) {  // sequential
+          if (!isnan(Ysh[ii])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// We observe that when we read into Ysh, we are accessing the elements of Ysh
+// in an uncoalesced fashion, i.e., column-wise.
+// To fix this, we take Yth, Yh transposed, as input instead of Yh, to make the
+// acess in the l-loop row-wise and thus coalesced.
+
+for (int i = 0; i < m; i += T) {          // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {       // sequential
+        float val = Xh[y,l] * Xth[l,x];
+        __shared__ float Ysh[T];
+        // Copy slice Yth[l, i:i+T] into Ysh
+        for (int ii = 0; ii < T; ii++) {  // sequential
+          if (!isnan(Ysh[ii])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {    // sequential
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+
+
