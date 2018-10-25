@@ -10,6 +10,7 @@
  bfast_step_7a took    3313.00 us (average of 10 runs)
  bfast_step_7b took       9.80 us (average of 10 runs)
   bfast_step_8 took    6785.90 us (average of 10 runs)
+total: 58521
 
 
 Worth looking at:
@@ -54,7 +55,7 @@ after step_2 tiling
  bfast_step_7a took    3259.72 us (average of 50 runs)
  bfast_step_7b took      15.96 us (average of 50 runs)
   bfast_step_8 took    6617.70 us (average of 50 runs)
-
+total: 49481.38
 
 after step_2 shared mem
   bfast_step_1 took      52.62 us (average of 50 runs)
@@ -89,3 +90,18 @@ if 4a can somehow be made faster in a way that uses Y instead of Yt, this last
 optimization to step_2 becomes a performance loss
 
 
+--- Reusing shared mem (prolonged runtime), using intrinsic functions and more
+arrays to copied to shared mem.
+
+  bfast_step_1 took      17.54 us (average of 50 runs)
+  bfast_step_2 took    4011.52 us (average of 50 runs)
+  bfast_step_3 took    2705.10 us (average of 50 runs)
+  bfast_step_4a took    1689.20 us (average of 50 runs)
+  bfast_step_4b took     518.28 us (average of 50 runs)
+  bfast_step_4c took    2701.12 us (average of 50 runs)
+  bfast_step_5 took    5171.96 us (average of 50 runs)
+  bfast_step_6 took    6598.22 us (average of 50 runs)
+  bfast_step_7a took    3495.60 us (average of 50 runs)
+  bfast_step_7b took      13.44 us (average of 50 runs)
+  bfast_step_8 took    5985.52 us (average of 50 runs)
+total: 32907.5

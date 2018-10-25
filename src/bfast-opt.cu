@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cassert>
 #include "bfast-helpers.cu.h"
-#define INVALID_INDEX (-1)
+//#define INVALID_INDEX (-1)
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -811,7 +811,7 @@ __global__ void bfast_step_7b(float lam,
     // Index into monitor period
     //unsigned int t = n + 1 + threadIdx.x;
 
-    float frac = (n + 1 + threadIdx.x)/(float)n;
+    float frac = fdividef(n + 1 + threadIdx.x, n);
 
     /*
     // logplus(frac). Assures `tmp` is at least 1.
@@ -819,7 +819,8 @@ __global__ void bfast_step_7b(float lam,
     else                     { BOUND[threadIdx.x] = lam; }
     */
 
-    BOUND[threadIdx.x] = lam * ( frac>__expf(1.0f) ? __fsqrt_rd(__logf(frac)) : 1);
+    //BOUND[threadIdx.x] = lam * ( frac>__expf(1.0f) ? __fsqrt_rd(__logf(frac)) : 1);
+    BOUND[threadIdx.x] = lam * ( frac>expf(1.0f) ? sqrtf(logf(frac)) : 1);
 
   }
 }
@@ -908,6 +909,12 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
     BOUND_shr[threadIdx.x] = BOUND[threadIdx.x];
   }
 
+  __shared__ int val_inds_shr[1024];
+  
+  if (threadIdx.x < N) {
+    val_inds_shr[threadIdx.x] = val_inds[threadIdx.x];
+  }
+
   __shared__ float MO_shr[1024];
   {
     if      ( Ns-ns       <= threadIdx.x ) { MO_shr[threadIdx.x] = 0.0f;   }
@@ -921,7 +928,8 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   {
     // MO'
     __syncthreads();
-    MO_shr[threadIdx.x] /= sigma * __fsqrt_rd( (float)ns );
+    //MO_shr[threadIdx.x] = fdividef( MO_shr[threadIdx.x] , sigma * __fsqrt_rd( (float)ns ));
+    MO_shr[threadIdx.x] = fdividef( MO_shr[threadIdx.x] , sigma ) * rsqrtf( (float)ns );
   }
 
   {
@@ -936,7 +944,7 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
 
     // Make sure all threads has read into `val` before overwriting source.
     __syncthreads();
-    MO_shr[val_inds[threadIdx.x + ns] - n] = val;
+    MO_shr[val_inds_shr[threadIdx.x + ns] - n] = val;
   }
 
   // Here might be a producer/consumer dependency in MO_shr.
