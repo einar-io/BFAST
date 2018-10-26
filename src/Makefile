@@ -4,12 +4,14 @@ kernels = kernels/bfast_others.cu kernels/bfast_step_2.cu \
 					kernels/bfast_step_8.cu
 
 all:
-	nvcc $(kernels) bfast.cu bfast_util.cu main.c values.c -std=c++11 \
-	--compiler-options -std=c11  -o bfast
+	gcc -std=c11 -c values.c
+	gcc -std=c11 -c main.c
+	nvcc $(kernels) bfast.cu bfast_util.cu main.o values.o -std=c++11 -o bfast
 
 debug:
-	nvcc -g -G $(kernels) bfast.cu bfast_util.cu \
-	main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
+	gcc -g -std=c11 -c values.c
+	gcc -g -std=c11 -c main.c
+	nvcc -g -G $(kernels) bfast.cu bfast_util.cu main.o values.o -std=c++11 -o bfast
 
 test: all
 	time futhark-test --compiler=/bin/true --runner=./bfast tests/tests.fut
@@ -21,4 +23,5 @@ benchmark: all
 	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast -i 1 -r 50 2>&1 >/dev/null
 
 clean:
-	rm -f bfast
+	rm -f bfast main.o values.o
+
