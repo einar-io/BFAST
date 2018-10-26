@@ -268,17 +268,25 @@ void bfast_run(const struct bfast_run_config *cfg, const char *name,
       timer_reset(&t[i]);
     }
     for (int i = 0; i < num_steps; i++) {
-      timer_start(&t[i]);
-      bfast_run_step(s, &steps[i]);
-      CUDA_SUCCEED(cudaDeviceSynchronize());
-      timer_stop(&t[i]);
+      for (int j = 0; j < cfg->num_runs; j++) {
+        timer_start(&t[i]);
+        bfast_run_step(s, &steps[i]);
+        CUDA_SUCCEED(cudaDeviceSynchronize());
+        timer_stop(&t[i]);
+      }
     }
     if (cfg->print_runtimes) {
+      float tot_time = 0;
+      for (int i = 0; i < num_steps; i++) {
+        tot_time += timer_elapsed(&t[i]);
+      }
       fprintf(stderr,"%s:\n", name);
       for (int i = 0; i < num_steps; i++) {
-        fprintf(stderr, "  %20s took %10.2f us (average of %d runs)\n",
+        fprintf(stderr, "  %20s: %10.2f us (average of %d runs)\n",
                 steps[i].desc , timer_elapsed(&t[i]), cfg->num_runs);
       }
+      fprintf(stderr,"\n\n  %20s: %10.2f us (average of %d runs)\n",
+              "Total runtime", tot_time, cfg->num_runs);
     }
     free(t);
   } else {
