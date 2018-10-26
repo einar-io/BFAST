@@ -20,7 +20,7 @@ test-memcheck: all
 	time futhark-test --compiler=/bin/true --runner=./memcheck-runner.sh tests/tests.fut
 
 benchmark: all
-	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast -i 1 -r 50 2>&1 >/dev/null
+	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-opt -i 1 -r 50 2>&1 >/dev/null
 
 clean:
 	rm -f bfast main.o values.o
