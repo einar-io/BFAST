@@ -123,7 +123,7 @@ void bfast_step_2_tiled_run(struct bfast_state *s)
   int m = s->m, N = s->N, n = s->n, k2p2 = s->k2p2;
 
   dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-  dim3 grid(m, 1, 1);
+  dim3 grid(CEIL_DIV(m, STEP_2_TILE_SIZE), 1, 1);
   bfast_step_2_tiled<<<grid, block>>>(d_X, d_Xt, d_Yt, d_Xsqr, N, n, k2p2, m);
 }
 
