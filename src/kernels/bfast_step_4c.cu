@@ -94,7 +94,7 @@ void bfast_step_4c_flipped_run(struct bfast_state *s)
   int m = s->m, N = s->N, k2p2 = s->k2p2;
 
   dim3 block(16, 16, 1);
-  dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
+  dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(m, block.y), 1);
   bfast_step_4c_flipped<<<grid, block>>>(d_X, d_beta, d_y_preds, N, m, k2p2);
 }
 
