@@ -8,7 +8,7 @@ all:
 	--compiler-options -std=c11  -o bfast
 
 debug:
-	nvcc -g -G --generate-line-info $(kernels) bfast.cu bfast_util.cu \
+	nvcc -g -G $(kernels) bfast.cu bfast_util.cu \
 	main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
 
 test: all
