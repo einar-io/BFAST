@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cassert>
-#include "bfast-helpers.cu.h"
+#include "bfast_util.cu.h"
 #define INVALID_INDEX (-1)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -22,13 +22,14 @@ __global__ void transpose_kernel(float *A, float *B, int heightA, int widthA)
   B[IDX_2D(gidx, gidy, heightA)] = A[IDX_2D(gidy, gidx, widthA)];
 }
 
-void transpose(float *d_A, float *d_B, int heightA, int widthA)
+void transpose(void *d_A, void *d_B, int heightA, int widthA)
 {
   dim3 block(16, 16, 1);
   dim3 grid(CEIL_DIV(widthA, block.x),
             CEIL_DIV(heightA, block.y),
             1);
-  transpose_kernel<<<grid, block>>>(d_A, d_B, heightA, widthA);
+  transpose_kernel<<<grid, block>>>((float *)d_A, (float *)d_B,
+                                    heightA, widthA);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -112,20 +113,22 @@ __global__ void bfast_step_1(float *X, int k2p2, int N, float f)
   X[IDX_2D(gidy, gidx, N)] = val;
 }
 
-extern "C" void bfast_step_1_single(float **X, int k2p2, int N, float f)
+void bfast_step_1_run(struct bfast_state *s)
 {
-  float *d_X;
-  const size_t mem_X = k2p2 * N * sizeof(float);
+  float *d_X = fget_dev(s,X);
+  int N = s->N, k2p2 = s->k2p2;
+  float freq = s->freq;
 
-  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
   dim3 block(16, 16, 1);
   dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
-  bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
-
-  *X = (float *)malloc(mem_X);
-  CUDA_SUCCEED(cudaMemcpy(*X, d_X, mem_X, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaFree(d_X));
+  bfast_step_1<<<grid, block>>>(d_X, k2p2, N, freq);
 }
+
+BFAST_BEGIN_TEST(bfast_step_1_test)
+  BFAST_BEGIN_INPUTS { } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_X } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_1_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -164,35 +167,27 @@ __global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
   out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
 }
 
-extern "C" void bfast_step_2_single(float *X, float *Xt, float *Y,
-    float **Xsqr, int N, int n, int k2p2, int m)
+void bfast_step_2_run(struct bfast_state *s)
 {
-  float *d_X = NULL, *d_Xt = NULL, *d_Y = NULL, *d_Xsqr = NULL;
-  const size_t mem_X = k2p2 * N * sizeof(float);
-  const size_t mem_Y = m * N * sizeof(float);
-  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
-  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_X));
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
-
-  CUDA_SUCCEED(cudaMemcpy(d_X, X, mem_X, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_X, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
+  float *d_X = fget_dev(s,X), *d_Xt = fget_dev_t(s,X);
+  float *d_Y = fget_dev(s,Y), *d_Xsqr = fget_dev(s,Xsqr);
+  int m = s->m, N = s->N, n = s->n, k2p2 = s->k2p2;
 
   dim3 block(8, 8, 1); // Assumes k2p2 <= 8
   dim3 grid(m, 1, 1);
   bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
-
-  *Xsqr = (float *)malloc(mem_Xsqr);
-  CUDA_SUCCEED(cudaMemcpy(*Xsqr, d_Xsqr, mem_Xsqr, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_X));
-  CUDA_SUCCEED(cudaFree(d_Xt));
-  CUDA_SUCCEED(cudaFree(d_Y));
-  CUDA_SUCCEED(cudaFree(d_Xsqr));
 }
+
+BFAST_BEGIN_TEST(bfast_step_2_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_X, BFAST_VALUE_Y } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_Xsqr } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS
+  {
+    BFAST_TRANSPOSE(X, transpose),
+    BFAST_STEP(bfast_step_2_run)
+  }
+  BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -254,26 +249,22 @@ __global__ void bfast_step_3(float *Xsqr, float *Xinv, int k2p2)
   }
 }
 
-extern "C" void bfast_step_3_single(float *Xsqr, float **Xinv, int k2p2, int m)
+void bfast_step_3_run(struct bfast_state *s)
 {
-  float *d_Xsqr = NULL, *d_Xinv = NULL;
-  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
-  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xsqr));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Xsqr, Xsqr, mem_Xsqr, cudaMemcpyHostToDevice));
+  float *d_Xsqr = fget_dev(s,Xsqr), *d_Xinv = fget_dev(s,Xinv);
+  int m = s->m, k2p2 = s->k2p2;
 
   dim3 block(16, 8, 1); // Assumes k2p2 <= 8
   dim3 grid(m, 1, 1);
   const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
   bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
-
-  *Xinv = (float *)malloc(mem_Xsqr);
-  CUDA_SUCCEED(cudaMemcpy(*Xinv, d_Xinv, mem_Xsqr, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaFree(d_Xinv));
-  CUDA_SUCCEED(cudaFree(d_Xsqr));
 }
+
+BFAST_BEGIN_TEST(bfast_step_3_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_Xsqr } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_Xinv } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_3_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -313,40 +304,30 @@ __global__ void bfast_step_4a(float *Xh, float *Yth, float *beta0t, int k2p2,
   beta0t[IDX_2D(gidy, gidx, m)] = accum;
 }
 
-extern "C" void bfast_step_4a_single(float *X, float *Y, float **beta0,
-    int k2p2, int n, int m, int N)
+void bfast_step_4a_run(struct bfast_state *s)
 {
-  float *d_X = NULL, *d_Y = NULL, *d_Yt = NULL;
-  float *d_beta0 = NULL, *d_beta0t = NULL;
-  const size_t mem_X = k2p2 * N * sizeof(float);
-  const size_t mem_Y = m * N * sizeof(float);
-  const size_t mem_beta0 = m * k2p2 * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
-  CUDA_SUCCEED(cudaMalloc(&d_beta0t, mem_beta0));
-
-  CUDA_SUCCEED(cudaMemcpy(d_X, X, mem_X, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
-
-  transpose(d_Y, d_Yt, m, N);
+  float *d_X = fget_dev(s,X), *d_Y = fget_dev(s,Y), *d_Yt = fget_dev_t(s,Y);
+  float *d_beta0t = fget_dev_t(s,beta0);
+  int m = s->m, k2p2 = s->k2p2, n = s->n, N = s->N;
 
   dim3 block(16, 16, 1);
   dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
   bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
-
-  transpose(d_beta0t, d_beta0, k2p2, m);
-
-  *beta0 = (float *)malloc(mem_beta0);
-  CUDA_SUCCEED(cudaMemcpy(*beta0, d_beta0, mem_beta0, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaFree(d_X));
-  CUDA_SUCCEED(cudaFree(d_Y));
-  CUDA_SUCCEED(cudaFree(d_Yt));
-  CUDA_SUCCEED(cudaFree(d_beta0));
-  CUDA_SUCCEED(cudaFree(d_beta0t));
 }
+
+BFAST_BEGIN_TEST(bfast_step_4a_test)
+  BFAST_BEGIN_INPUTS
+  { BFAST_VALUE_X, BFAST_VALUE_Y, BFAST_VALUE_beta0 }
+  BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_beta0 } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS
+  {
+    BFAST_TRANSPOSE(Y, transpose),
+    BFAST_STEP(bfast_step_4a_run),
+    BFAST_UNTRANSPOSE(beta0, transpose)
+  }
+  BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -382,31 +363,22 @@ __global__ void bfast_step_4b(float *Xinv, float *beta0, float *beta, int k2p2)
   beta[IDX_2D(blockIdx.x, threadIdx.x, blockDim.x)] = accum;
 }
 
-extern "C" void bfast_step_4b_single(float *Xinv, float *beta0, float **beta,
-    int m, int k2p2)
+void bfast_step_4b_run(struct bfast_state *s)
 {
-  float *d_Xinv = NULL, *d_beta0 = NULL, *d_beta = NULL;
-  const size_t mem_Xinv = m * k2p2 * k2p2 * sizeof(float);
-  const size_t mem_beta0 = m * k2p2 * sizeof(float);
-  const size_t mem_beta = mem_beta0;
-
-  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
-  CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
-  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Xinv, Xinv, mem_Xinv, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_beta0, beta0, mem_beta0, cudaMemcpyHostToDevice));
+  float *d_Xinv = fget_dev(s,Xinv), *d_beta0 = fget_dev(s,beta0);
+  float *d_beta = fget_dev(s,beta);
+  int m = s->m, k2p2 = s->k2p2;
 
   dim3 block(8, 1, 1); // Assumes k2p2 <= 8
   dim3 grid(m, 1, 1);
   bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
-
-  *beta = (float *)malloc(mem_beta);
-  CUDA_SUCCEED(cudaMemcpy(*beta, d_beta, mem_beta, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaFree(d_Xinv));
-  CUDA_SUCCEED(cudaFree(d_beta0));
-  CUDA_SUCCEED(cudaFree(d_beta));
 }
+
+BFAST_BEGIN_TEST(bfast_step_4b_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_Xinv, BFAST_VALUE_beta0 } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_beta } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_4b_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -444,42 +416,29 @@ __global__ void bfast_step_4c(float *Xt, float *betat, float *y_predst,
   y_predst[IDX_2D(gidy, gidx, m)] = accum;
 }
 
-extern "C" void bfast_step_4c_single(float *Xt, float *beta, float **y_preds,
-    int m, int N, int k2p2)
+void bfast_step_4c_run(struct bfast_state *s)
 {
-  float *d_Xt = NULL, *d_beta = NULL, *d_betat = NULL;
-  float *d_y_preds = NULL, *d_y_predst = NULL;
-  const size_t mem_Xt = N * k2p2 * sizeof(float);
-  const size_t mem_beta = m * k2p2 * sizeof(float);
-  const size_t mem_y_preds = m * N * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_Xt));
-  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
-  CUDA_SUCCEED(cudaMalloc(&d_betat, mem_beta));
-  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
-  CUDA_SUCCEED(cudaMalloc(&d_y_predst, mem_y_preds));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Xt, Xt, mem_Xt, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_beta, beta, mem_beta, cudaMemcpyHostToDevice));
-
-  transpose(d_beta, d_betat, m, k2p2);
+  float *d_Xt = fget_dev_t(s,X), *d_betat = fget_dev_t(s,beta);
+  float *d_y_predst = fget_dev_t(s,y_preds);
+  int m = s->m, N = s->N, k2p2 = s->k2p2;
 
   dim3 block(16, 16, 1);
   dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
   bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
-
-  transpose(d_y_predst, d_y_preds, N, m);
-
-  *y_preds = (float *)malloc(mem_y_preds);
-  CUDA_SUCCEED(cudaMemcpy(*y_preds, d_y_preds, mem_y_preds,
-        cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaFree(d_Xt));
-  CUDA_SUCCEED(cudaFree(d_beta));
-  CUDA_SUCCEED(cudaFree(d_betat));
-  CUDA_SUCCEED(cudaFree(d_y_preds));
-  CUDA_SUCCEED(cudaFree(d_y_predst));
 }
 
+BFAST_BEGIN_TEST(bfast_step_4c_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_X, BFAST_VALUE_beta } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_y_preds } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS
+  {
+    BFAST_TRANSPOSE(X,transpose),
+    BFAST_TRANSPOSE(beta,transpose),
+    BFAST_STEP(bfast_step_4c_run),
+    BFAST_UNTRANSPOSE(y_preds,transpose)
+  }
+  BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -535,45 +494,29 @@ __global__ void bfast_step_5(float *Y, float *y_preds, int *Nss,
   }
 }
 
-extern "C" void bfast_step_5_single(float *Y, float *y_preds, int **Nss,
-    float **y_errors, int **val_indss, int N, int m)
+void bfast_step_5_run(struct bfast_state *s)
 {
-  float *d_Y = NULL, *d_y_preds = NULL, *d_y_errors = NULL;
-  int *d_Nss = NULL, *d_val_indss = NULL;
-  const size_t mem_Y = m * N * sizeof(float);
-  const size_t mem_y_preds = mem_Y;
-  const size_t mem_Nss = m * sizeof(float);
-  const size_t mem_y_errors = mem_Y;
-  const size_t mem_val_indss = mem_Y;
-
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
-  CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
-  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
-  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_y_preds, y_preds, mem_y_preds, cudaMemcpyHostToDevice));
+  int m = s->m, N = s->N;
+  float *d_Y = fget_dev(s,Y), *d_y_preds = fget_dev(s,y_preds);
+  int *d_Nss = iget_dev(s,Nss), *d_val_indss = iget_dev(s,val_indss);
+  float *d_y_errors = fget_dev(s,y_errors);
 
   dim3 block(1024, 1, 1);
   dim3 grid(m, 1, 1);
   bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
-
-  *Nss = (int *)malloc(mem_Nss);
-  *y_errors = (float *)malloc(mem_y_errors);
-  *val_indss = (int *)malloc(mem_val_indss);
-  CUDA_SUCCEED(cudaMemcpy(*Nss, d_Nss, mem_Nss, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaMemcpy(*y_errors, d_y_errors, mem_y_errors,
-        cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaMemcpy(*val_indss, d_val_indss, mem_val_indss,
-        cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_Y));
-  CUDA_SUCCEED(cudaFree(d_y_preds));
-  CUDA_SUCCEED(cudaFree(d_Nss));
-  CUDA_SUCCEED(cudaFree(d_y_errors));
-  CUDA_SUCCEED(cudaFree(d_val_indss));
 }
+
+BFAST_BEGIN_TEST(bfast_step_5_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_Y, BFAST_VALUE_y_preds } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS
+  {
+    BFAST_VALUE_Nss,
+    BFAST_VALUE_y_errors,
+    BFAST_VALUE_val_indss,
+  }
+  BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_5_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -622,42 +565,24 @@ __global__ void bfast_step_6(float *Yh, float *y_errors, int *nss,
   }
 }
 
-extern "C" void bfast_step_6_single(float *Y, float *y_errors,  int **nss,
-    float **sigmas, int n, int k2p2, int m, int N)
+void bfast_step_6_run(struct bfast_state *s)
 {
-  float *d_Y = NULL, *d_y_errors = NULL, *d_sigmas = NULL;
-  int *d_nss = NULL;
-  const size_t mem_Y = m * N * sizeof(float);
-  const size_t mem_y_errors = mem_Y;
-  const size_t mem_nss = m * sizeof(float);
-  const size_t mem_sigmas = mem_nss;
+  int n = s->n, k2p2 = s->k2p2, m = s->m, N = s->N;
+  float *d_Y = fget_dev(s,Y), *d_y_errors = fget_dev(s,y_errors);
+  int *d_nss = iget_dev(s,nss);
+  float *d_sigmas = fget_dev(s,sigmas);
 
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
-  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
-  CUDA_SUCCEED(cudaMalloc(&d_sigmas, mem_sigmas));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_y_errors, y_errors, mem_y_errors,
-        cudaMemcpyHostToDevice));
-
-  fprintf(stderr, "n=%d, k2p2=%d, m=%d, N=%d\n", n, k2p2, m, N);
   dim3 block(1024, 1, 1);
   dim3 grid(m, 1, 1);
   bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
-
-  *nss = (int *)malloc(mem_nss);
-  *sigmas = (float *)malloc(mem_sigmas);
-
-  CUDA_SUCCEED(cudaMemcpy(*nss, d_nss, mem_nss, cudaMemcpyDeviceToHost));
-  CUDA_SUCCEED(cudaMemcpy(*sigmas, d_sigmas, mem_sigmas,
-        cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_Y));
-  CUDA_SUCCEED(cudaFree(d_y_errors));
-  CUDA_SUCCEED(cudaFree(d_nss));
-  CUDA_SUCCEED(cudaFree(d_sigmas));
 }
+
+BFAST_BEGIN_TEST(bfast_step_6_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_Y, BFAST_VALUE_y_errors } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_nss, BFAST_VALUE_sigmas } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_6_run) } BFAST_END_STEPS
+BFAST_END_TEST
+
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -698,40 +623,26 @@ __global__ void bfast_step_7a(float *y_errors,
   }
 }
 
-extern "C" void 
-bfast_step_7a_single(float  *y_errors,
-                       int  *nss,
-                       int   h,
-                       int   N,
-                       int   m,
-                     float **MO_fsts)
+void bfast_step_7a_run(struct bfast_state *s)
 {
-  float *d_y_errors = NULL;
-  int   *d_nss      = NULL;
-  float *d_MO_fsts  = NULL;
-
-  const size_t mem_y_errors = m * N * sizeof(float);
-  const size_t mem_nss      = m * sizeof(float);
-  const size_t mem_MO_fsts  = m * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
-  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
-  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts, mem_MO_fsts));
-
-  CUDA_SUCCEED(cudaMemcpy(d_y_errors, y_errors, mem_y_errors, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_nss, nss, mem_nss, cudaMemcpyHostToDevice));
-
-  fprintf(stderr, "h=%d, N=%d, m=%d", h, N, m);
+  int h = (int)((float)s->n * s->hfrac), N = s->N, m = s->m;
+  float *d_y_errors = fget_dev(s,y_errors), *d_MO_fsts = fget_dev(s,MO_fsts);
+  int *d_nss = iget_dev(s,nss);
 
   dim3 grid(m, 1, 1);
   dim3 block(1024, 1, 1);
   bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
-
-  *MO_fsts = (float *)malloc(mem_MO_fsts);
-  CUDA_SUCCEED(cudaMemcpy(*MO_fsts, d_MO_fsts, mem_MO_fsts, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_MO_fsts));
 }
+
+BFAST_BEGIN_TEST(bfast_step_7a_test)
+  BFAST_BEGIN_INPUTS
+  {
+    BFAST_VALUE_y_errors, BFAST_VALUE_nss
+  }
+  BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_MO_fsts } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_7a_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -773,32 +684,22 @@ __global__ void bfast_step_7b(float lam,
   }
 }
 
-extern "C" void bfast_step_7b_single(float lam, int n, int N, float
-    **BOUND)
+void bfast_step_7b_run(struct bfast_state *s)
 {
-  float *d_BOUND = NULL;
-
-  const size_t mem_BOUND = (N - n)  * sizeof(float);
-  
-  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
-
-  CUDA_SUCCEED(cudaMemcpy(d_BOUND, BOUND, mem_BOUND, cudaMemcpyHostToDevice));
-
-  fprintf(stderr, "lam=%f, n=%d, N=%d\n", lam, n, N);
-  // GPU not needed for this
-  //  *BOUND = (float *)malloc((N - n) * sizeof(float));
-  // bfast_step_7b(lam, n, N, *BOUND);
+  float lam = s->lam;
+  int n = s->n, N = s->N;
+  float *d_BOUND = fget_dev(s,BOUND);
 
   dim3 grid(1, 1, 1);
   dim3 block(1024, 1, 1);
-  bfast_step_7b<<<grid, block>>>(lam, n, N, *BOUND);
-
-  *BOUND = (float *)malloc(mem_BOUND);
-
-  CUDA_SUCCEED(cudaMemcpy(BOUND, d_BOUND, mem_BOUND, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_BOUND));
+  bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
 }
+
+BFAST_BEGIN_TEST(bfast_step_7b_test)
+  BFAST_BEGIN_INPUTS { } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_BOUND } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_7b_run) } BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -901,294 +802,54 @@ __global__ void bfast_step_8(float *y_errors,  // [m][N]
   }
 }
 
-extern "C" void
-bfast_step_8_single(float  *y_errors,  // [m][N]
-                      int  *val_indss, // [m][N]
-                      int  *Nss,       // [m]
-                      int  *nss,       // [m]
-                    float  *sigmas,    // [m]
-                    float  *MO_fsts,   // [m]
-                    float  *BOUND,     // [N-n]
-                      int  h,
-                      int  m,
-                      int  N,
-                      int  n,
-                    float **breakss)   // [m][N-n]
+void bfast_step_8_run(struct bfast_state *s)
 {
-
-  float *d_y_errors  = NULL;
-  int   *d_val_indss = NULL;
-  int   *d_Nss       = NULL;
-  int   *d_nss       = NULL;
-  float *d_sigmas    = NULL;
-  float *d_MO_fsts   = NULL;
-  float *d_BOUND     = NULL;
-  float *d_breakss = NULL;
-
-  const size_t mem_y_errors  = m * N * sizeof(float);
-  const size_t mem_val_indss = m * N * sizeof(int);
-  const size_t mem_Nss       = m     * sizeof(int);
-  const size_t mem_nss       = m     * sizeof(int);
-  const size_t mem_sigmas    = m     * sizeof(float);
-  const size_t mem_MO_fsts   = m     * sizeof(float);
-  const size_t mem_BOUND     =     N * sizeof(float);
-
-  const size_t mem_breakss   = m * N * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_y_errors,  mem_y_errors));
-  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
-  CUDA_SUCCEED(cudaMalloc(&d_Nss,       mem_Nss));
-  CUDA_SUCCEED(cudaMalloc(&d_nss,       mem_nss));
-  CUDA_SUCCEED(cudaMalloc(&d_sigmas,    mem_sigmas));
-  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts,   mem_MO_fsts));
-  CUDA_SUCCEED(cudaMalloc(&d_BOUND,     mem_BOUND));
-  CUDA_SUCCEED(cudaMalloc(&d_breakss,     mem_breakss));
-
-  CUDA_SUCCEED(cudaMemcpy(d_y_errors,  y_errors,  mem_y_errors,  cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_val_indss, val_indss, mem_val_indss, cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_Nss,       Nss,       mem_Nss,       cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_nss,       nss,       mem_nss,       cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_sigmas,    sigmas,    mem_sigmas,    cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_MO_fsts,   MO_fsts,   mem_MO_fsts,   cudaMemcpyHostToDevice));
-  CUDA_SUCCEED(cudaMemcpy(d_BOUND,     BOUND,     mem_BOUND,     cudaMemcpyHostToDevice));
-
-  fprintf(stderr, "h=%d, m=%d, n=%d\n", h, m, n);
+  float *d_y_errors = fget_dev(s,y_errors);
+  int *d_val_indss = iget_dev(s,val_indss);
+  int *d_Nss = iget_dev(s,Nss), *d_nss = iget_dev(s,nss);
+  float *d_sigmas = fget_dev(s,sigmas), *d_MO_fsts = fget_dev(s,MO_fsts);
+  float *d_BOUND = fget_dev(s,BOUND), *d_breakss = fget_dev(s,breakss);
+  int h = (int)((float)s->n * s->hfrac), m = s->m;
+  int N = s->N, n = s->n;
 
   dim3 grid(m, 1, 1);
   dim3 block(1024, 1, 1);
-  bfast_step_8<<<grid, block>>>
-  (d_y_errors, d_val_indss, d_Nss, d_nss, d_sigmas, d_MO_fsts, d_BOUND, h, n, N, d_breakss);
-
-  *breakss = (float *)malloc(mem_breakss);
-  CUDA_SUCCEED(cudaMemcpy(*breakss, d_breakss, mem_breakss, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_MO_fsts));
-  CUDA_SUCCEED(cudaFree(d_y_errors));
-  CUDA_SUCCEED(cudaFree(d_val_indss));
-  CUDA_SUCCEED(cudaFree(d_Nss));
-  CUDA_SUCCEED(cudaFree(d_nss));
-  CUDA_SUCCEED(cudaFree(d_sigmas));
-  CUDA_SUCCEED(cudaFree(d_BOUND));
-  CUDA_SUCCEED(cudaFree(d_breakss));
+  bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
+                                d_sigmas, d_MO_fsts, d_BOUND, h, n, N,
+                                d_breakss);
 }
 
-extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
+BFAST_BEGIN_TEST(bfast_step_8_test)
+  BFAST_BEGIN_INPUTS
+  {
+    BFAST_VALUE_y_errors, BFAST_VALUE_val_indss, BFAST_VALUE_Nss,
+    BFAST_VALUE_nss, BFAST_VALUE_sigmas, BFAST_VALUE_MO_fsts, BFAST_VALUE_BOUND
+  }
+  BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_breakss } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_8_run) } BFAST_END_STEPS
+BFAST_END_TEST
+
+extern "C" void bfast_naive(struct bfast_run_config *cfg)
 {
-  int k = in->k;
-  int n = in->n;
-  float f = in->freq;
-  float hfrac = in->hfrac;
-  float lam = in->lam;
-  float *Y = in->images;
-  const int m = in->shp[0];
-  const int N = in->shp[1];
-
-  int k2p2 = k * 2 + 2;
-  int h = (int) ((float)n * hfrac);
-
-  float *d_Y, *d_X, *d_Xt, *d_Xsqr, *d_Xinv, *d_Yt;
-  float *d_beta0, *d_beta0t, *d_beta, *d_betat, *d_y_preds, *d_y_predst;
-  int *d_Nss, *d_val_indss, *d_nss;
-  float *d_sigmas, *d_MO_fsts, *d_y_errors, *d_BOUND, *d_breakss;
-
-  const size_t mem_X = k2p2 * N * sizeof(float);
-  const size_t mem_Y = m * N * sizeof(float);
-  const size_t mem_Xsqr = m * k2p2 * k2p2 * sizeof(float);
-  const size_t mem_Xinv = m * k2p2 * k2p2 * sizeof(float);
-  const size_t mem_beta0 = m * k2p2 * sizeof(float);
-  const size_t mem_beta = m * k2p2 * sizeof(float);
-  const size_t mem_y_preds = m * N * sizeof(float);
-  const size_t mem_Nss = m * sizeof(int);
-  const size_t mem_y_errors = mem_Y;
-  const size_t mem_val_indss = mem_Y;
-  const size_t mem_nss = m * sizeof(int);
-  const size_t mem_sigmas = mem_nss;
-  const size_t mem_MO_fsts = mem_nss;
-  const size_t mem_BOUND = (N - n) * sizeof(float);
-  const size_t mem_breakss = m * (N - n) * sizeof(float);
-
-  CUDA_SUCCEED(cudaMalloc(&d_X, mem_X));
-  CUDA_SUCCEED(cudaMalloc(&d_Xt, mem_X));
-  CUDA_SUCCEED(cudaMalloc(&d_Y, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_Xsqr, mem_Xsqr));
-  CUDA_SUCCEED(cudaMalloc(&d_Xinv, mem_Xinv));
-  CUDA_SUCCEED(cudaMalloc(&d_Yt, mem_Y));
-  CUDA_SUCCEED(cudaMalloc(&d_beta0, mem_beta0));
-  CUDA_SUCCEED(cudaMalloc(&d_beta0t, mem_beta0));
-  CUDA_SUCCEED(cudaMalloc(&d_beta, mem_beta));
-  CUDA_SUCCEED(cudaMalloc(&d_betat, mem_beta));
-  CUDA_SUCCEED(cudaMalloc(&d_y_preds, mem_y_preds));
-  CUDA_SUCCEED(cudaMalloc(&d_y_predst, mem_y_preds));
-  CUDA_SUCCEED(cudaMalloc(&d_Nss, mem_Nss));
-  CUDA_SUCCEED(cudaMalloc(&d_y_errors, mem_y_errors));
-  CUDA_SUCCEED(cudaMalloc(&d_val_indss, mem_val_indss));
-  CUDA_SUCCEED(cudaMalloc(&d_nss, mem_nss));
-  CUDA_SUCCEED(cudaMalloc(&d_sigmas, mem_sigmas));
-  CUDA_SUCCEED(cudaMalloc(&d_MO_fsts, mem_MO_fsts));
-  CUDA_SUCCEED(cudaMalloc(&d_BOUND, mem_BOUND));
-  CUDA_SUCCEED(cudaMalloc(&d_breakss, mem_breakss));
-
-  CUDA_SUCCEED(cudaMemcpy(d_Y, Y, mem_Y, cudaMemcpyHostToDevice));
-
-  CUDA_SUCCEED(cudaDeviceSynchronize());
-
-  struct timer bfast_timer;
-  struct timer kernel_timer[11];
-  timer_reset(&bfast_timer);
-  for (int i = 0; i < sizeof(kernel_timer)/sizeof(kernel_timer[0]); i++) {
-    timer_reset(&kernel_timer[i]);
-  }
-
-  for (int i = 0; i < num_runs; i++) {
-    if (!print_individual) { timer_start(&bfast_timer); }
-
-    {
-      timer_individual_start(kernel_timer, 0);
-      dim3 block(16, 16, 1);
-      dim3 grid(CEIL_DIV(N, block.x), CEIL_DIV(k2p2, block.y), 1);
-      bfast_step_1<<<grid, block>>>(d_X, k2p2, N, f);
-      timer_individual_stop(kernel_timer, 0);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 1);
-      transpose(d_X, d_Xt, k2p2, N);
-      dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-      dim3 grid(m, 1, 1);
-      bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
-      timer_individual_stop(kernel_timer, 1);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 2);
-      dim3 block(16, 8, 1); // Assumes k2p2 <= 8
-      dim3 grid(m, 1, 1);
-      const size_t shared_size = k2p2 * 2 * k2p2 * sizeof(float);
-      bfast_step_3<<<grid, block, shared_size>>>(d_Xsqr, d_Xinv, k2p2);
-      timer_individual_stop(kernel_timer, 2);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 3);
-      transpose(d_Y, d_Yt, m, N);
-      dim3 block(16, 16, 1);
-      dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
-      bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
-      transpose(d_beta0t, d_beta0, k2p2, m);
-      timer_individual_stop(kernel_timer, 3);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 4);
-      dim3 block(8, 1, 1); // Assumes k2p2 <= 8
-      dim3 grid(m, 1, 1);
-      bfast_step_4b<<<grid, block>>>(d_Xinv, d_beta0, d_beta, k2p2);
-      timer_individual_stop(kernel_timer, 4);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 5);
-      transpose(d_beta, d_betat, m, k2p2);
-      dim3 block(16, 16, 1);
-      dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(N, block.y), 1);
-      bfast_step_4c<<<grid, block>>>(d_Xt, d_betat, d_y_predst, N, m, k2p2);
-      transpose(d_y_predst, d_y_preds, N, m);
-      timer_individual_stop(kernel_timer, 5);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 6);
-      dim3 block(1024, 1, 1);
-      dim3 grid(m, 1, 1);
-      bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
-      timer_individual_stop(kernel_timer, 6);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 7);
-      dim3 block(1024, 1, 1);
-      dim3 grid(m, 1, 1);
-      bfast_step_6<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
-      timer_individual_stop(kernel_timer, 7);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 8);
-      dim3 block(1024, 1, 1);
-      dim3 grid(m, 1, 1);
-      bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
-      timer_individual_stop(kernel_timer, 8);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 9);
-      dim3 block(1024, 1, 1);
-      dim3 grid(1, 1, 1);
-      bfast_step_7b<<<grid, block>>>(lam, n, N, d_BOUND);
-      timer_individual_stop(kernel_timer, 9);
-    }
-
-    {
-      timer_individual_start(kernel_timer, 10);
-      dim3 block(1024, 1, 1);
-      dim3 grid(m, 1, 1);
-      bfast_step_8<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
-          d_sigmas, d_MO_fsts, d_BOUND, h, n, N, d_breakss);
-      timer_individual_stop(kernel_timer, 10);
-    }
-
-    if (!print_individual) { timer_stop(&bfast_timer); }
-  }
-
-  if (print_individual) {
-    for (int i = 0; i < sizeof(kernel_timer)/sizeof(kernel_timer[0]); i++) {
-      const char *kernel_name;
-      switch (i) {
-      case 0:   kernel_name = "bfast_step_1";  break;
-      case 1:   kernel_name = "bfast_step_2";  break;
-      case 2:   kernel_name = "bfast_step_3";  break;
-      case 3:   kernel_name = "bfast_step_4a"; break;
-      case 4:   kernel_name = "bfast_step_4b"; break;
-      case 5:   kernel_name = "bfast_step_4c"; break;
-      case 6:   kernel_name = "bfast_step_5";  break;
-      case 7:   kernel_name = "bfast_step_6";  break;
-      case 8:   kernel_name = "bfast_step_7a"; break;
-      case 9:   kernel_name = "bfast_step_7b"; break;
-      case 10:  kernel_name = "bfast_step_8";  break;
-      default:  assert(0);
-      }
-      timer_report(&kernel_timer[i], kernel_name);
-    }
-  } else {
-    timer_report(&bfast_timer, "bfast");
-  }
-
-  
-
-  out->breakss = (float *)malloc(m * (N - n) * sizeof(float));
-  out->breakss[0] = 0.0;
-  out->shp[0] = m;
-  out->shp[1] = N - n;
-  CUDA_SUCCEED(cudaMemcpy(out->breakss, d_breakss, mem_breakss, cudaMemcpyDeviceToHost));
-
-  CUDA_SUCCEED(cudaFree(d_X));
-  CUDA_SUCCEED(cudaFree(d_Xt));
-  CUDA_SUCCEED(cudaFree(d_Y));
-  CUDA_SUCCEED(cudaFree(d_Xsqr));
-  CUDA_SUCCEED(cudaFree(d_Xinv));
-  CUDA_SUCCEED(cudaFree(d_Yt));
-  CUDA_SUCCEED(cudaFree(d_beta0));
-  CUDA_SUCCEED(cudaFree(d_beta0t));
-  CUDA_SUCCEED(cudaFree(d_beta));
-  CUDA_SUCCEED(cudaFree(d_betat));
-  CUDA_SUCCEED(cudaFree(d_y_preds));
-  CUDA_SUCCEED(cudaFree(d_y_predst));
-  CUDA_SUCCEED(cudaFree(d_Nss));
-  CUDA_SUCCEED(cudaFree(d_y_errors));
-  CUDA_SUCCEED(cudaFree(d_val_indss));
-  CUDA_SUCCEED(cudaFree(d_nss));
-  CUDA_SUCCEED(cudaFree(d_sigmas));
-  CUDA_SUCCEED(cudaFree(d_MO_fsts));
-  CUDA_SUCCEED(cudaFree(d_BOUND));
-  CUDA_SUCCEED(cudaFree(d_breakss));
+  const struct bfast_step steps[] = {
+    BFAST_STEP(bfast_step_1_run),
+    BFAST_TRANSPOSE(X, transpose),
+    BFAST_STEP(bfast_step_2_run),
+    BFAST_STEP(bfast_step_3_run),
+    BFAST_TRANSPOSE(Y, transpose),
+    BFAST_STEP(bfast_step_4a_run),
+    BFAST_UNTRANSPOSE(beta0, transpose),
+    BFAST_STEP(bfast_step_4b_run),
+    BFAST_TRANSPOSE(beta, transpose),
+    BFAST_STEP(bfast_step_4c_run),
+    BFAST_UNTRANSPOSE(y_preds, transpose),
+    BFAST_STEP(bfast_step_5_run),
+    BFAST_STEP(bfast_step_6_run),
+    BFAST_STEP(bfast_step_7a_run),
+    BFAST_STEP(bfast_step_7b_run),
+    BFAST_STEP(bfast_step_8_run)
+  };
+  bfast_run(cfg, "bfast-naive", steps, NUM_ELEMS(steps));
 }
+

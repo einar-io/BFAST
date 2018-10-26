@@ -1,60 +1,6 @@
 
 -- ==
--- entry: bfast_1
--- compiled input @ ../../data/sahara-1.in.gz
--- output @ ../../data/sahara-1.out.gz
-
--- ==
--- entry: bfast_2
--- compiled input @ ../../data/sahara-2.in.gz
--- output @ ../../data/sahara-2.out.gz
-
--- ==
--- entry: bfast_3
--- compiled input @ ../../data/sahara-3.in.gz
--- output @ ../../data/sahara-3.out.gz
-
--- ==
--- entry: bfast_4a
--- compiled input @ ../../data/sahara-4a.in.gz
--- output @ ../../data/sahara-4a.out.gz
-
--- ==
--- entry: bfast_4b
--- compiled input @ ../../data/sahara-4b.in.gz
--- output @ ../../data/sahara-4b.out.gz
-
--- ==
--- entry: bfast_4c
--- compiled input @ ../../data/sahara-4c.in.gz
--- output @ ../../data/sahara-4c.out.gz
-
--- ==
--- entry: bfast_5
--- compiled input @ ../../data/sahara-5.in.gz
--- output @ ../../data/sahara-5.out.gz
-
--- ==
--- entry: bfast_6
--- compiled input @ ../../data/sahara-6.in.gz
--- output @ ../../data/sahara-6.out.gz
-
--- ==
--- entry: bfast_7a
--- compiled input @ ../../data/sahara-7a.in.gz
--- output @ ../../data/sahara-7a.out.gz
-
--- ==
--- entry: bfast_7b
--- compiled input @ ../../data/sahara-7b.in.gz
--- output @ ../../data/sahara-7b.out.gz
-
--- ==
--- entry: bfast_8
--- compiled input @ ../../data/sahara-8.in.gz
--- output @ ../../data/sahara-8.out.gz
-
--- ==
+-- entry: main
 -- compiled input @ ../../data/sahara.in.gz
 -- output @ ../../data/sahara.out.gz
 
@@ -278,11 +224,25 @@ entry main [m][N] (k: i32) (n: i32) (f: f32)
 --------------------------------------------------------------------------------
 -- For generating test inputs and outputs
 
-entry bfast_1_in   [m][N] (k: i32) (_: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (_ : [m][N]f32) =
+entry bfast_inputs [m][N] (k: i32) (n: i32) (f: f32)
+                   (hfrac: f32) (lam: f32)
+                   (Y : [m][N]f32) =
   let k2p2 = 2 * k + 2
-  in (k2p2, N, f)
+  let X = bfast_1 k2p2 N f
+  let Xt = transpose X
+  let Xsqr = bfast_2 X Xt Y n
+  let Xinv = bfast_3 Xsqr
+  let beta0 = bfast_4a X Y n
+  let beta = bfast_4b Xinv beta0
+  let y_preds = bfast_4c Xt beta
+  let (Nss, y_errors, val_indss) = bfast_5 Y y_preds
+  let (nss, sigmas) = bfast_6 Y y_errors n k2p2
+  let h = t32 ( (r32 n) * hfrac )
+  let MO_fsts = bfast_7a y_errors nss h
+  let BOUND = bfast_7b N n lam
+  in (k, n, f, hfrac, lam, Y, X, Xsqr, Xinv, beta0, beta, y_preds, Nss,
+      y_errors,  val_indss, nss, sigmas, MO_fsts, BOUND)
+
 entry bfast_1_out  [m][N] (k: i32) (_: i32) (f: f32)
                           (_: f32) (_: f32)
                           (_ : [m][N]f32) =
@@ -290,13 +250,6 @@ entry bfast_1_out  [m][N] (k: i32) (_: i32) (f: f32)
   let X = bfast_1 k2p2 N f
   in X
 
-entry bfast_2_in   [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  in (X, Xt, Y, n)
 entry bfast_2_out  [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -306,14 +259,6 @@ entry bfast_2_out  [m][N] (k: i32) (n: i32) (f: f32)
   let Xsqr = bfast_2 X Xt Y n
   in Xsqr
 
-entry bfast_3_in   [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  in Xsqr
 entry bfast_3_out  [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -324,12 +269,6 @@ entry bfast_3_out  [m][N] (k: i32) (n: i32) (f: f32)
   let Xinv = bfast_3 Xsqr
   in Xinv
 
-entry bfast_4a_in  [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  in (X, Y, n)
 entry bfast_4a_out [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -338,16 +277,6 @@ entry bfast_4a_out [m][N] (k: i32) (n: i32) (f: f32)
   let beta0 = bfast_4a X Y n
   in beta0
 
-entry bfast_4b_in  [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  in (Xinv, beta0)
 entry bfast_4b_out [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -360,17 +289,6 @@ entry bfast_4b_out [m][N] (k: i32) (n: i32) (f: f32)
   let beta = bfast_4b Xinv beta0
   in beta
 
-entry bfast_4c_in  [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  let beta = bfast_4b Xinv beta0
-  in (Xt, beta)
 entry bfast_4c_out [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -384,18 +302,6 @@ entry bfast_4c_out [m][N] (k: i32) (n: i32) (f: f32)
   let y_preds = bfast_4c Xt beta
   in y_preds
 
-entry bfast_5_in   [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  let beta = bfast_4b Xinv beta0
-  let y_preds = bfast_4c Xt beta
-  in (Y, y_preds)
 entry bfast_5_out  [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -410,19 +316,6 @@ entry bfast_5_out  [m][N] (k: i32) (n: i32) (f: f32)
   let (Nss, y_errors, val_indss) = bfast_5 Y y_preds
   in (Nss, y_errors, val_indss)
 
-entry bfast_6_in   [m][N] (k: i32) (n: i32) (f: f32)
-                          (_: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  let beta = bfast_4b Xinv beta0
-  let y_preds = bfast_4c Xt beta
-  let (_, y_errors, _) = bfast_5 Y y_preds
-  in (Y, y_errors, n, k2p2)
 entry bfast_6_out  [m][N] (k: i32) (n: i32) (f: f32)
                           (_: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -438,21 +331,6 @@ entry bfast_6_out  [m][N] (k: i32) (n: i32) (f: f32)
   let (nss, sigmas) = bfast_6 Y y_errors n k2p2
   in (nss, sigmas)
 
-entry bfast_7a_in  [m][N] (k: i32) (n: i32) (f: f32)
-                          (hfrac: f32) (_: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  let beta = bfast_4b Xinv beta0
-  let y_preds = bfast_4c Xt beta
-  let (_, y_errors, _) = bfast_5 Y y_preds
-  let (nss, _) = bfast_6 Y y_errors n k2p2
-  let h = t32 ( (r32 n) * hfrac )
-  in (y_errors, nss, h)
 entry bfast_7a_out [m][N] (k: i32) (n: i32) (f: f32)
                           (hfrac: f32) (_: f32)
                           (Y : [m][N]f32) =
@@ -470,33 +348,12 @@ entry bfast_7a_out [m][N] (k: i32) (n: i32) (f: f32)
   let MO_fsts = bfast_7a y_errors nss h
   in MO_fsts
 
-entry bfast_7b_in  [m][N] (_: i32) (n: i32) (_: f32)
-                          (_: f32) (lam: f32)
-                          (_ : [m][N]f32) =
-  (N, n, lam)
 entry bfast_7b_out [m][N] (_: i32) (n: i32) (_: f32)
                           (_: f32) (lam: f32)
                           (_ : [m][N]f32) =
   let BOUND = bfast_7b N n lam
   in BOUND
 
-entry bfast_8_in   [m][N] (k: i32) (n: i32) (f: f32)
-                          (hfrac: f32) (lam: f32)
-                          (Y : [m][N]f32) =
-  let k2p2 = 2 * k + 2
-  let X = bfast_1 k2p2 N f
-  let Xt = transpose X
-  let Xsqr = bfast_2 X Xt Y n
-  let Xinv = bfast_3 Xsqr
-  let beta0 = bfast_4a X Y n
-  let beta = bfast_4b Xinv beta0
-  let y_preds = bfast_4c Xt beta
-  let (Nss, y_errors, val_indss) = bfast_5 Y y_preds
-  let (nss, sigmas) = bfast_6 Y y_errors n k2p2
-  let h = t32 ( (r32 n) * hfrac )
-  let MO_fsts = bfast_7a y_errors nss h
-  let BOUND = bfast_7b N n lam
-  in (Nss, nss, sigmas, MO_fsts, y_errors, val_indss, BOUND, h, n)
 entry bfast_8_out  [m][N] (k: i32) (n: i32) (f: f32)
                           (hfrac: f32) (lam: f32)
                           (Y : [m][N]f32) =
