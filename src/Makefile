@@ -4,11 +4,11 @@ kernels = kernels/bfast_others.cu kernels/bfast_step_2.cu \
 					kernels/bfast_step_8.cu
 
 all:
-	nvcc $(kernels) bfast-naive.cu bfast_util.cu main.c values.c -std=c++11 \
+	nvcc $(kernels) bfast.cu bfast_util.cu main.c values.c -std=c++11 \
 	--compiler-options -std=c11  -o bfast
 
 debug:
-	nvcc -g -G --generate-line-info $(kernels) bfast-naive.cu bfast_util.cu \
+	nvcc -g -G --generate-line-info $(kernels) bfast.cu bfast_util.cu \
 	main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
 
 test: all
