@@ -280,13 +280,13 @@ void bfast_run(const struct bfast_run_config *cfg, const char *name,
       for (int i = 0; i < num_steps; i++) {
         tot_time += timer_elapsed(&t[i]);
       }
-      fprintf(stderr,"%s:\n", name);
+      fprintf(stderr, "%s (all times are an average of %d runs):\n",
+              name, cfg->num_runs);
       for (int i = 0; i < num_steps; i++) {
-        fprintf(stderr, "  %20s: %10.2f us (average of %d runs)\n",
-                steps[i].desc , timer_elapsed(&t[i]), cfg->num_runs);
+        fprintf(stderr, "  %25s: %10.2f us\n",
+                steps[i].desc , timer_elapsed(&t[i]));
       }
-      fprintf(stderr,"\n\n  %20s: %10.2f us (average of %d runs)\n",
-              "Total runtime", tot_time, cfg->num_runs);
+      fprintf(stderr,"\n\n  %25s: %10.2f us\n", "Total runtime", tot_time);
     }
     free(t);
   } else {
@@ -301,7 +301,7 @@ void bfast_run(const struct bfast_run_config *cfg, const char *name,
       timer_stop(&t);
     }
     if (cfg->print_runtimes) {
-      fprintf(stderr, "%20s took %10.2f us (average of %d runs)\n",
+      fprintf(stderr, "%s took %10.2f us (average of %d runs)\n",
               name, timer_elapsed(&t), cfg->num_runs);
     }
   }
