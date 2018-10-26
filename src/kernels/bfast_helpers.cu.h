@@ -105,7 +105,7 @@ __device__ inline T scaninc_warp_add(volatile T *in)
 }
 
 template <class T>
-__device__ inline void scaninc_block_add(volatile T *in)
+__device__ inline T scaninc_block_add_nowrite(volatile T *in)
 {
   const unsigned int idx    = threadIdx.x;
   const unsigned int lane   = idx &  31;
@@ -124,8 +124,18 @@ __device__ inline void scaninc_block_add(volatile T *in)
     val = in[warpid-1] + val;
   }
 
+  return val;
+}
+
+template <class T>
+__device__ inline void scaninc_block_add(volatile T *in)
+{
+  const unsigned int idx = threadIdx.x;
+  T val = scaninc_block_add_nowrite(in);
   __syncthreads();
   in[idx] = val;
   __syncthreads();
 }
+
+
 
