@@ -1,10 +1,15 @@
-all: naive
 
-bfast:
-	nvcc bfast-naive.cu bfast_util.cu main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
+kernels = kernels/bfast_others.cu kernels/bfast_step_2.cu \
+					kernels/bfast_step_4c.cu kernels/bfast_step_6.cu \
+					kernels/bfast_step_8.cu
 
-bfast-debug:
-	nvcc -g -G --generate-line-info bfast-naive.cu bfast_util.cu main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
+all:
+	nvcc $(kernels) bfast-naive.cu bfast_util.cu main.c values.c -std=c++11 \
+	--compiler-options -std=c11  -o bfast
+
+debug:
+	nvcc -g -G --generate-line-info $(kernels) bfast-naive.cu bfast_util.cu \
+	main.c values.c -std=c++11 --compiler-options -std=c11  -o bfast
 
 test: all
 	time futhark-test --compiler=/bin/true --runner=./bfast tests/tests.fut

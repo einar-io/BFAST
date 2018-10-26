@@ -1,6 +1,6 @@
 
 -- ==
--- entry: bfast-naive
+-- entry: bfast-naive bfast-opt
 -- compiled input @ ../../data/sahara.in.gz
 -- output @ ../../data/sahara.out.gz
 
@@ -15,7 +15,7 @@
 -- output @ ../../data/sahara-1.out.gz
 
 -- ==
--- entry: bfast-2
+-- entry: bfast-2 bfast-2-tiled
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-2.out.gz
 
@@ -35,7 +35,7 @@
 -- output @ ../../data/sahara-4b.out.gz
 
 -- ==
--- entry: bfast-4c
+-- entry: bfast-4c bfast-4c-flipped
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-4c.out.gz
 
@@ -45,7 +45,7 @@
 -- output @ ../../data/sahara-5.out.gz
 
 -- ==
--- entry: bfast-6
+-- entry: bfast-6 bfast-6-reuse
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-6.out.gz
 
@@ -60,7 +60,7 @@
 -- output @ ../../data/sahara-7b.out.gz
 
 -- ==
--- entry: bfast-8
+-- entry: bfast-8 bfast-8-opt
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-8.out.gz
 
