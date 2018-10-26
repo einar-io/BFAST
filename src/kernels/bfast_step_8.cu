@@ -135,7 +135,7 @@ void bfast_step_8_opt_run(struct bfast_state *s)
   int N = s->N, n = s->n;
 
   dim3 grid(m, 1, 1);
-  dim3 block(1024, 1, 1);
+  dim3 block(N-n, 1, 1);
   bfast_step_8_opt<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
                                     d_sigmas, d_MO_fsts, d_BOUND, h, n, N,
                                     d_breakss);
