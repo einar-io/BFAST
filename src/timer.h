@@ -38,6 +38,6 @@ static void timer_stop(struct timer *t)
 static float timer_elapsed(struct timer *t)
 {
   assert(t->num_runs > 0);
-  return t->sum / (int64_t)t->num_runs;
+  return t->sum / (float)t->num_runs;
 }
 
