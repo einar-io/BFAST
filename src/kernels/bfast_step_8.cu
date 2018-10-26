@@ -39,8 +39,9 @@ __global__ void bfast_step_8_opt2(float *y_errors,  // [m][N]
   int   *val_inds = &val_indss[blockIdx.x * N];
   float *breaks   = &breakss  [blockIdx.x * (N-n)];
   float val;
-  __shared__ float BOUND_shr[1024];
-  __shared__ float MO_shr[1024];
+  extern __shared__ float shr[];
+  volatile float *BOUND_shr = &shr[0];
+  volatile float *MO_shr = &shr[N-n];
 
   BOUND_shr[threadIdx.x] = BOUND[threadIdx.x];
 
@@ -83,9 +84,11 @@ void bfast_step_8_opt2_run(struct bfast_state *s)
 
   dim3 grid(m, 1, 1);
   dim3 block(N-n, 1, 1);
-  bfast_step_8_opt2<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
-                                     d_sigmas, d_MO_fsts, d_BOUND, h, n, N,
-                                     d_breakss);
+  const size_t shared_size = (N-n) * 2 * sizeof(float);
+  bfast_step_8_opt2<<<grid, block, shared_size>>>(d_y_errors, d_val_indss,
+                                                  d_Nss, d_nss, d_sigmas,
+                                                  d_MO_fsts, d_BOUND, h, n,
+                                                  N, d_breakss);
 }
 
 BFAST_BEGIN_TEST(bfast_step_8_opt2_test)
