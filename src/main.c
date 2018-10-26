@@ -8,18 +8,18 @@
 #include "values.h"
 #include "bfast.h"
 
-extern void bfast_naive();
-extern void bfast_step_1_test();
-extern void bfast_step_2_test();
-extern void bfast_step_3_test();
-extern void bfast_step_4a_test();
-extern void bfast_step_4b_test();
-extern void bfast_step_4c_test();
-extern void bfast_step_5_test();
-extern void bfast_step_6_test();
-extern void bfast_step_7a_test();
-extern void bfast_step_7b_test();
-extern void bfast_step_8_test();
+extern void bfast_naive(struct bfast_run_config *);
+extern void bfast_step_1_test(struct bfast_run_config *);
+extern void bfast_step_2_test(struct bfast_run_config *);
+extern void bfast_step_3_test(struct bfast_run_config *);
+extern void bfast_step_4a_test(struct bfast_run_config *);
+extern void bfast_step_4b_test(struct bfast_run_config *);
+extern void bfast_step_4c_test(struct bfast_run_config *);
+extern void bfast_step_5_test(struct bfast_run_config *);
+extern void bfast_step_6_test(struct bfast_run_config *);
+extern void bfast_step_7a_test(struct bfast_run_config *);
+extern void bfast_step_7b_test(struct bfast_run_config *);
+extern void bfast_step_8_test(struct bfast_run_config *);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0, use this.
