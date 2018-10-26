@@ -1,9 +1,10 @@
 #include <cstdio>
 #include <cstdint>
 #include <cassert>
-#include "bfast-helpers.cu.h"
+//#include "bfast-helpers.cu.h"
 #define INVALID_INDEX (-1)
 
+/*
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -813,11 +814,6 @@ __global__ void bfast_step_7b(float lam,
 
     float frac = (n + 1 + threadIdx.x)/(float)n;
 
-    /*
-    // logplus(frac). Assures `tmp` is at least 1.
-    if (frac > __expf(1.0f)) { BOUND[threadIdx.x] = lam * __fsqrt_rd( __logf(frac)); }
-    else                     { BOUND[threadIdx.x] = lam; }
-    */
 
     BOUND[threadIdx.x] = lam * ( frac>__expf(1.0f) ? __fsqrt_rd(__logf(frac)) : 1);
 
@@ -1243,3 +1239,4 @@ extern "C" void bfast_naive(struct bfast_in *in, struct bfast_out *out)
   CUDA_SUCCEED(cudaFree(d_BOUND));
   CUDA_SUCCEED(cudaFree(d_breakss));
 }
+*/
