@@ -1,19 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////
-//  Step 8: Mapping each sample to its excess value w.r.t. its bound. Maybe.
+//  Step 8: Calculating breakss
 //
 // Input:
-//   y_errors[]:  [m][N]
-//   val_indss[]: [m][N]
-//   Nss[]:       [m]
-//   nss[]:       [m]
-//   sigmas[]:    [m]
-//   MO_fsts[]:   [m]
-//   BOUND[]:     [N-n]
-//   h:
-//   m:
-//   N:
+//   y_errors:  [m][N]f32
+//   val_indss: [m][N]i32
+//   Nss:       [m]i32
+//   nss:       [m]i32
+//   sigmas:    [m]f32
+//   MO_fsts:   [m]f32
+//   BOUND:     [N-n]f32
 // Output:
-//   breakss[]:   [m][N-n]
+//   breakss:   [m][N-n]f32
 #include "../bfast_util.cu.h"
 #include "bfast_helpers.cu.h"
 

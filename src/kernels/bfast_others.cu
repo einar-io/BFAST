@@ -138,7 +138,7 @@ BFAST_END_TEST
 //   X:     [k2p2][N]f32    (only using slice: [k2p2][n])
 //   Y:     [m][N]f32       (only using slice: [m][n])
 // Output:
-//   beta0: [m][k2p2]
+//   beta0: [m][k2p2]f32
 //
 // This calculation is performed by transposing Y (so its dimensions become
 // [N][m]) and then applying (filtered) matrix-matrix multiplication.
@@ -262,7 +262,7 @@ __global__ void bfast_step_5(float *Y, float *y_preds, int *Nss,
     float *y_errors, int *val_indss, int N)
 {
   // Grid: (m, 1, 1)
-  // Block: (1024, 1, 1)
+  // Block: (N, 1, 1)
 
   if (threadIdx.x >= N) { return; }
 
@@ -325,13 +325,13 @@ BFAST_END_TEST
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-//  Step 7a: Produces some interesting value.
+//  Step 7a: Calculating MO_fsts
 //
 // Input:
-//    y_errors: [m][N]
-//    nss:      [m]
+//    y_errors: [m][N]f32
+//    nss:      [m]i32
 // Output:
-//    MO_fsts:  [m]
+//    MO_fsts:  [m]f32
 
 __global__ void bfast_step_7a(float *y_errors,
                                 int *nss,
@@ -340,14 +340,13 @@ __global__ void bfast_step_7a(float *y_errors,
                               float *MO_fsts)
 {
   // Grid:  (m, 1, 1)
-  // Block: (1024, 1, 1)
+  // Block: (h, 1, 1)
 
   if (h <= threadIdx.x) { return; }
 
   float *y_error = &y_errors[blockIdx.x * N];
   float *MO_fst  = &MO_fsts [blockIdx.x];
   int    ns      = nss      [blockIdx.x];
-
   __shared__ float errs[1024];
 
   errs[threadIdx.x] = y_error[threadIdx.x  + ns - h + 1];
@@ -384,14 +383,11 @@ BFAST_END_TEST
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-//  Step 7b: Produces a BOUND value of at least lam for each step in the monitor period. 
+//  Step 7b: Calculating BOUND
 //
 // Input:
-//    lam:   0
-//    n:     0
-//    N:     0
 // Output:
-//    BOUND: [N-n]
+//    BOUND: [N-n]f32
 
 __global__ void bfast_step_7b(float lam,
                               int   n,
@@ -399,20 +395,11 @@ __global__ void bfast_step_7b(float lam,
                             float  *BOUND)
 {
   // Grid: (1, 1, 1)
-  // Block: (1024, 1, 1)
+  // Block: (N-n, 1, 1)
 
-  // int monitor_period_sz = N-n;
   if ( threadIdx.x < N-n ) {
-
-    // Index into monitor period
-    //unsigned int t = n + 1 + threadIdx.x;
-
     float frac = fdividef(n + 1 + threadIdx.x, n);
-
-
-    //BOUND[threadIdx.x] = lam * ( frac>__expf(1.0f) ? __fsqrt_rd(__logf(frac)) : 1);
     BOUND[threadIdx.x] = lam * ( frac>expf(1.0f) ? sqrtf(logf(frac)) : 1);
-
   }
 }
 

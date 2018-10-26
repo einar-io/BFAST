@@ -33,8 +33,6 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   scaninc_block_add<int>(num_valids);
   int ns = num_valids[n - 1];
 
-  // hacky optimization: reuse num_valids by ptr cast
-  // __shared__ float sigma_shared[1024]; 
   float *sigma_shared = (float *) &num_valids;
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
@@ -43,9 +41,8 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   scaninc_block_add<float>(sigma_shared);
 
   if (threadIdx.x == 0) {
-    //float sigma0 = sigma_shared[n - 1];
-    //float sigma = sqrtf(sigma0 / ((float)(ns - k2p2)));
-    sigmas[blockIdx.x] = __fsqrt_rd(sigma_shared[n - 1] / ((float)(ns - k2p2)));
+    sigmas[blockIdx.x] =
+      __fsqrt_rd(sigma_shared[n - 1] / ((float)(ns - k2p2)));
     nss[blockIdx.x] = ns;
   }
 }
@@ -92,7 +89,6 @@ __global__ void bfast_step_6(float *Yh, float *y_errors, int *nss,
   scaninc_block_add<int>(num_valids);
   int ns = num_valids[n - 1];
 
-  // hacky optimization: reuse num_valids by ptr cast
   __shared__ float sigma_shared[1024];
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
