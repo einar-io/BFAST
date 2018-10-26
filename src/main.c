@@ -23,6 +23,7 @@ extern void bfast_step_7a_test(struct bfast_run_config *);
 extern void bfast_step_7b_test(struct bfast_run_config *);
 extern void bfast_step_8_test(struct bfast_run_config *);
 extern void bfast_step_8_opt_test(struct bfast_run_config *);
+extern void bfast_step_8_opt2_test(struct bfast_run_config *);
 extern void bfast_naive(struct bfast_run_config *);
 extern void bfast_opt(struct bfast_run_config *cfg);
 
@@ -52,6 +53,7 @@ int run_entry(const char *entry, struct bfast_run_config *cfg)
     {         "bfast-7b",         bfast_step_7b_test },
     {          "bfast-8",          bfast_step_8_test },
     {      "bfast-8-opt",      bfast_step_8_opt_test },
+    {     "bfast-8-opt2",     bfast_step_8_opt2_test },
     // Full BFAST runs
     {      "bfast-naive",                bfast_naive },
     {        "bfast-opt",                  bfast_opt },

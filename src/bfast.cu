@@ -26,6 +26,7 @@ void bfast_step_6_reuse_run(struct bfast_state *s);
 // bfast_step_8.cu
 void bfast_step_8_run(struct bfast_state *s);
 void bfast_step_8_opt_run(struct bfast_state *s);
+void bfast_step_8_opt2_run(struct bfast_state *s);
 
 
 extern "C" void bfast_naive(struct bfast_run_config *cfg)
@@ -67,7 +68,7 @@ extern "C" void bfast_opt(struct bfast_run_config *cfg)
     BFAST_STEP(bfast_step_6_reuse_run),
     BFAST_STEP(bfast_step_7a_run),
     BFAST_STEP(bfast_step_7b_run),
-    BFAST_STEP(bfast_step_8_opt_run)
+    BFAST_STEP(bfast_step_8_opt2_run)
   };
   bfast_run(cfg, "bfast-opt", steps, NUM_ELEMS(steps));
 }

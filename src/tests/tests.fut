@@ -60,7 +60,7 @@
 -- output @ ../../data/sahara-7b.out.gz
 
 -- ==
--- entry: bfast-8 bfast-8-opt
+-- entry: bfast-8 bfast-8-opt bfast-8-opt2
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-8.out.gz
 
