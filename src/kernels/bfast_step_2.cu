@@ -13,57 +13,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// Naive implementation
-
-__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
-    int N, int n, int k2p2)
-{
-  // Grid: (m, 1, 1)
-  // Block: (k2p2, k2p2, 1)
-
-  float *yh = &Yh[blockIdx.x * N];
-  float accum = 0.0;
-
-  if (threadIdx.y >= k2p2 || threadIdx.x >= k2p2) {
-    return;
-  }
-
-  for (int k = 0; k < n; k++) {
-    if (!isnan(yh[k])) {
-      accum += Xh[IDX_2D(threadIdx.y, k, N)] *
-                 Xth[IDX_2D(k, threadIdx.x, k2p2)];
-    }
-  }
-
-  float *out_mat = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
-  out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
-}
-
-void bfast_step_2_run(struct bfast_state *s)
-{
-  float *d_X = fget_dev(s,X), *d_Xt = fget_dev_t(s,X);
-  float *d_Y = fget_dev(s,Y), *d_Xsqr = fget_dev(s,Xsqr);
-  int m = s->m, N = s->N, n = s->n, k2p2 = s->k2p2;
-
-  dim3 block(8, 8, 1); // Assumes k2p2 <= 8
-  dim3 grid(m, 1, 1);
-  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
-}
-
-BFAST_BEGIN_TEST(bfast_step_2_test)
-  BFAST_BEGIN_INPUTS { BFAST_VALUE_X, BFAST_VALUE_Y } BFAST_END_INPUTS
-  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_Xsqr } BFAST_END_OUTPUTS
-  BFAST_BEGIN_STEPS
-  {
-    BFAST_TRANSPOSE(X, transpose),
-    BFAST_STEP(bfast_step_2_run)
-  }
-  BFAST_END_STEPS
-BFAST_END_TEST
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 // Tiled implementation
 
 #define STEP_2_TILE_SIZE 28
@@ -135,6 +84,57 @@ BFAST_BEGIN_TEST(bfast_step_2_tiled_test)
     BFAST_TRANSPOSE(X, transpose),
     BFAST_TRANSPOSE(Y, transpose),
     BFAST_STEP(bfast_step_2_tiled_run)
+  }
+  BFAST_END_STEPS
+BFAST_END_TEST
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Naive implementation
+
+__global__ void bfast_step_2(float *Xh, float *Xth, float *Yh, float *Xsqr,
+    int N, int n, int k2p2)
+{
+  // Grid: (m, 1, 1)
+  // Block: (k2p2, k2p2, 1)
+
+  float *yh = &Yh[blockIdx.x * N];
+  float accum = 0.0;
+
+  if (threadIdx.y >= k2p2 || threadIdx.x >= k2p2) {
+    return;
+  }
+
+  for (int k = 0; k < n; k++) {
+    if (!isnan(yh[k])) {
+      accum += Xh[IDX_2D(threadIdx.y, k, N)] *
+                 Xth[IDX_2D(k, threadIdx.x, k2p2)];
+    }
+  }
+
+  float *out_mat = &Xsqr[blockIdx.x * (k2p2 * k2p2)];
+  out_mat[IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum;
+}
+
+void bfast_step_2_run(struct bfast_state *s)
+{
+  float *d_X = fget_dev(s,X), *d_Xt = fget_dev_t(s,X);
+  float *d_Y = fget_dev(s,Y), *d_Xsqr = fget_dev(s,Xsqr);
+  int m = s->m, N = s->N, n = s->n, k2p2 = s->k2p2;
+
+  dim3 block(8, 8, 1); // Assumes k2p2 <= 8
+  dim3 grid(m, 1, 1);
+  bfast_step_2<<<grid, block>>>(d_X, d_Xt, d_Y, d_Xsqr, N, n, k2p2);
+}
+
+BFAST_BEGIN_TEST(bfast_step_2_test)
+  BFAST_BEGIN_INPUTS { BFAST_VALUE_X, BFAST_VALUE_Y } BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_Xsqr } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS
+  {
+    BFAST_TRANSPOSE(X, transpose),
+    BFAST_STEP(bfast_step_2_run)
   }
   BFAST_END_STEPS
 BFAST_END_TEST
