@@ -20,7 +20,7 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
     float *sigmas, int n, int N, int k2p2)
 {
   // Grid dimensions (x, y, z): (m, 1, 1)
-  // Block dimensions (x, y, z ): (1024, 1, 1)
+  // Block dimensions (x, y, z ): (n, 1, 1)
 
   if (threadIdx.x >= n) { return; }
 
@@ -32,8 +32,9 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   __syncthreads();
   scaninc_block_add<int>(num_valids);
   int ns = num_valids[n - 1];
+  __syncthreads(); // necessary because shared memory is reused
 
-  float *sigma_shared = (float *) &num_valids;
+  float *sigma_shared = (float *) num_valids;
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
   sigma_shared[threadIdx.x] = val;
