@@ -173,7 +173,7 @@ void bfast_step_4a_run(struct bfast_state *s)
   float *d_beta0t = fget_dev_t(s,beta0);
   int m = s->m, k2p2 = s->k2p2, n = s->n, N = s->N;
 
-  dim3 block(16, 16, 1);
+  dim3 block(32, 8, 1);
   dim3 grid(CEIL_DIV(m, block.x), CEIL_DIV(k2p2, block.y), 1);
   bfast_step_4a<<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, n, m, N);
 }
@@ -276,7 +276,7 @@ __global__ void bfast_step_5(float *Y, float *y_preds, int *Nss,
   float err = !isnan(val) ? val - y_pred[threadIdx.x] : NAN;
 
   // Partition
-  __shared__ int num_valids[1024];
+  extern __shared__ int num_valids[]; // N
   num_valids[threadIdx.x] = !isnan(err);
   __syncthreads();
   scaninc_block_add<int>(num_valids);
@@ -307,7 +307,9 @@ void bfast_step_5_run(struct bfast_state *s)
 
   dim3 block(N, 1, 1);
   dim3 grid(m, 1, 1);
-  bfast_step_5<<<grid, block>>>(d_Y, d_y_preds, d_Nss, d_y_errors, d_val_indss, N);
+  const size_t shared_size = N * sizeof(int);
+  bfast_step_5<<<grid, block, shared_size>>>(d_Y, d_y_preds, d_Nss, d_y_errors,
+                                             d_val_indss, N);
 }
 
 BFAST_BEGIN_TEST(bfast_step_5_test)
@@ -368,7 +370,8 @@ void bfast_step_7a_run(struct bfast_state *s)
   dim3 grid(m, 1, 1);
   dim3 block(h, 1, 1);
   const size_t shared_size = h * sizeof(float);
-  bfast_step_7a<<<grid, block, shared_size>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
+  bfast_step_7a<<<grid, block, shared_size>>>(d_y_errors, d_nss, h, N,
+                                              d_MO_fsts);
 }
 
 BFAST_BEGIN_TEST(bfast_step_7a_test)
