@@ -347,7 +347,7 @@ __global__ void bfast_step_7a(float *y_errors,
   float *y_error = &y_errors[blockIdx.x * N];
   float *MO_fst  = &MO_fsts [blockIdx.x];
   int    ns      = nss      [blockIdx.x];
-  __shared__ float errs[1024];
+  extern __shared__ float errs[];
 
   errs[threadIdx.x] = y_error[threadIdx.x  + ns - h + 1];
   __syncthreads();
@@ -367,7 +367,8 @@ void bfast_step_7a_run(struct bfast_state *s)
 
   dim3 grid(m, 1, 1);
   dim3 block(h, 1, 1);
-  bfast_step_7a<<<grid, block>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
+  const size_t shared_size = h * sizeof(float);
+  bfast_step_7a<<<grid, block, shared_size>>>(d_y_errors, d_nss, h, N, d_MO_fsts);
 }
 
 BFAST_BEGIN_TEST(bfast_step_7a_test)
