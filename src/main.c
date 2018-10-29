@@ -13,9 +13,11 @@ extern void bfast_step_2_test(struct bfast_run_config *);
 extern void bfast_step_2_tiled_test(struct bfast_run_config *);
 extern void bfast_step_3_test(struct bfast_run_config *);
 extern void bfast_step_4a_test(struct bfast_run_config *);
+extern void bfast_step_4a_flipped_test(struct bfast_run_config *);
 extern void bfast_step_4b_test(struct bfast_run_config *);
 extern void bfast_step_4c_test(struct bfast_run_config *);
 extern void bfast_step_4c_flipped_test(struct bfast_run_config *);
+extern void bfast_step_4c_tiled_test(struct bfast_run_config *);
 extern void bfast_step_5_test(struct bfast_run_config *);
 extern void bfast_step_6_test(struct bfast_run_config *);
 extern void bfast_step_6_reuse_test(struct bfast_run_config *);
@@ -43,9 +45,11 @@ int run_entry(const char *entry, struct bfast_run_config *cfg)
     {    "bfast-2-tiled",    bfast_step_2_tiled_test },
     {          "bfast-3",          bfast_step_3_test },
     {         "bfast-4a",         bfast_step_4a_test },
+    { "bfast-4a-flipped", bfast_step_4a_flipped_test },
     {         "bfast-4b",         bfast_step_4b_test },
     {         "bfast-4c",         bfast_step_4c_test },
     { "bfast-4c-flipped", bfast_step_4c_flipped_test },
+    {   "bfast-4c-tiled",   bfast_step_4c_tiled_test },
     {          "bfast-5",          bfast_step_5_test },
     {          "bfast-6",          bfast_step_6_test },
     {    "bfast-6-reuse",    bfast_step_6_reuse_test },
