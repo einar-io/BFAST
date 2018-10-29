@@ -1,7 +1,7 @@
 
 kernels = kernels/bfast_others.cu kernels/bfast_step_2.cu \
-					kernels/bfast_step_4c.cu kernels/bfast_step_6.cu \
-					kernels/bfast_step_8.cu
+					kernels/bfast_step_4a.cu kernels/bfast_step_4c.cu \
+					kernels/bfast_step_6.cu kernels/bfast_step_8.cu
 
 all:
 	gcc -std=c11 -c values.c
