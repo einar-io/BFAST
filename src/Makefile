@@ -22,6 +22,9 @@ test-memcheck: all
 benchmark: all
 	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-opt -i 1 -r 50 2>&1 >/dev/null
 
+benchmark-naive: all
+	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-naive -i 1 -r 50 2>&1 >/dev/null
+
 clean:
 	rm -f bfast main.o values.o
 
