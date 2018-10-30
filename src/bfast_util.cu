@@ -280,13 +280,20 @@ void bfast_run(const struct bfast_run_config *cfg, const char *name,
       for (int i = 0; i < num_steps; i++) {
         tot_time += timer_elapsed(&t[i]);
       }
-      fprintf(stderr, "%s (all times are an average of %d runs):\n",
+      fprintf(stderr, "\n%s (all times are an average of %d runs):\n\n",
               name, cfg->num_runs);
+
+
+      size_t max_width = 0;
       for (int i = 0; i < num_steps; i++) {
-        fprintf(stderr, "  %25s: %10.2f us\n",
-                steps[i].desc , timer_elapsed(&t[i]));
+        max_width = max(max_width, strlen(steps[i].desc));
       }
-      fprintf(stderr,"\n\n  %25s: %10.2f us\n", "Total runtime", tot_time);
+
+      for (int i = 0; i < num_steps; i++) {
+        fprintf(stderr, "%-*s %10.2f µs\n", max_width,
+                steps[i].desc, timer_elapsed(&t[i]));
+      }
+      fprintf(stderr,"\n\n%-*s %10.2f µs\n", max_width, "Total runtime", tot_time);
     }
     free(t);
   } else {
