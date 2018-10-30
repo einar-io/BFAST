@@ -25,7 +25,7 @@
 -- output @ ../../data/sahara-3.out.gz
 
 -- ==
--- entry: bfast-4a bfast-4a-flipped
+-- entry: bfast-4a bfast-4a-flipped bfast-4a-tiled
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-4a.out.gz
 

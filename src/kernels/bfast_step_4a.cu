@@ -15,7 +15,89 @@
 #include "../bfast_util.cu.h"
 #include "bfast_helpers.cu.h"
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// Tiled implementation of the naive version (not the flipped)
+//
 
+template <int T>
+__global__ void mmmult_regtiled_4a(float* A, float* B, float* C,
+                                   int heightA, int widthB, int widthA, int N)
+{
+  __shared__ float Ash[T][T];
+  float cs[T];
+
+  unsigned int ii = blockDim.y * blockIdx.y;
+  unsigned int jjj = blockDim.x * blockDim.x * blockIdx.x;
+  unsigned int jj = jjj + threadIdx.y * blockDim.x;
+  unsigned int j = jj + threadIdx.x;
+  unsigned int col = j;
+
+  #pragma unroll
+  for (int i = 0; i < T; i++) { cs[i] = 0.0; }
+
+  for (int kk = 0; kk < widthA; kk += T) {
+    // Copy slice A[ii:ii+T, kk:kk+T]
+    if (ii + threadIdx.y < heightA && kk + threadIdx.x < widthA) {
+      Ash[threadIdx.y][threadIdx.x] =
+        A[IDX_2D(ii + threadIdx.y, kk + threadIdx.x, N)];
+    } else {
+      Ash[threadIdx.y][threadIdx.x] = 0.0;
+    }
+    __syncthreads();
+
+    for (int k = 0; k < T; k++) {
+      float b;
+      if (kk + k < widthA /* heightB */ && col < widthB) {
+        b = B[IDX_2D(kk + k, col, widthB)];
+      } else {
+        b = 0.0;
+      }
+      #pragma unroll
+      for (int i = 0; i < T; i++) {
+        if (!isnan(b)) {
+          cs[i] += b * Ash[i][k];
+        }
+      }
+    }
+
+    __syncthreads();
+  }
+
+  #pragma unroll
+  for (int i = 0; i < T; i++) {
+    if (col < widthB && ii + i < heightA) {
+      C[IDX_2D(ii + i, col, widthB)] = cs[i];
+    }
+  }
+}
+
+void bfast_step_4a_tiled_run(struct bfast_state *s)
+{
+  float *d_X = fget_dev(s,X), *d_Yt = fget_dev_t(s,Y);
+  float *d_beta0t = fget_dev_t(s,beta0);
+  int m = s->m, k2p2 = s->k2p2, n = s->n, N = s->N;
+
+  const int T = 16;
+  dim3 block(T, T, 1);
+  dim3 grid(CEIL_DIV(m, T*T), CEIL_DIV(k2p2, T), 1);
+  mmmult_regtiled_4a<T><<<grid, block>>>(d_X, d_Yt, d_beta0t, k2p2, m, n, N);
+}
+
+BFAST_BEGIN_TEST(bfast_step_4a_tiled_test)
+  BFAST_BEGIN_INPUTS
+  { BFAST_VALUE_X, BFAST_VALUE_Y }
+  BFAST_END_INPUTS
+  BFAST_BEGIN_OUTPUTS { BFAST_VALUE_beta0 } BFAST_END_OUTPUTS
+  BFAST_BEGIN_STEPS
+  {
+    BFAST_TRANSPOSE(Y, transpose),
+    BFAST_STEP(bfast_step_4a_tiled_run),
+    BFAST_UNTRANSPOSE(beta0, transpose)
+  }
+  BFAST_END_STEPS
+BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
