@@ -1,0 +1,39 @@
+@COMMENT{
+
+    1. Everything outside a legal definition is a comment.
+    2. When adding entries with multiple authors be sure to separate them with 
+    the word 'and' or face regret. http://www.tex.ac.uk/FAQ-manyauthor.html
+    3. To override the chosen citation style define a `shorthand` key.
+    4. Curly braces `{` `}` seem to be more common than doublequotes.
+    5. Doublequotes are cancer due to unholy interactions with special characters.
+    6. Blank lines between entries makes vim actions like `=ip` easier.
+
+    For more advanced and non-book examples, please see: 
+    https://en.wikipedia.org/wiki/BibTeX#Examples
+
+    For a comprehensive list of available types and their fields, see:
+    https://en.wikibooks.org/wiki/LaTeX/Bibliography_Management#biblatex
+
+    `biber --tool -V diku.bib` can be used to test integrity of the file.
+
+    2018-06-05
+
+    --Einar
+    }
+@unpublished{pmph,
+    author        = {Cosmin Eugen Oancea},
+    title         = {Lecture Notes for the Software Track of the PMPH Course},
+    note          = {Lecture Notes},
+    file          = {lecture-notes-pmph.pdf},
+    month         = {9},
+    year          = {2018},
+    day           = {14}
+}
+@book{dubois,
+    author = {Dubois, Michel and Annavaram, Murali and Stenstrm, Per},
+    title = {Parallel Computer Organization and Design},
+    year = {2012},
+    isbn = {0521886759, 9780521886758},
+    publisher = {Cambridge University Press},
+    address = {New York, NY, USA},
+}

@@ -1,0 +1,535 @@
+%Needs to go before document class.  http://tex.stackexchange.com/a/589
+\RequirePackage[l2tabu,orthodox]{nag}
+
+% http://tex.stackexchange.com/questions/62311/a4paper-where-should-i-declare-it-in-document-class-or-geometry
+% http://tex.stackexchange.com/questions/79046/baselinestretch-vs-setspace
+%\documentclass[12pt, a4paper]{article}
+\documentclass[a4paper]{article}
+%\usepackage[margin=1.8cm]{geometry}
+%\usepackage{setspace}
+%\setstretch{1.3}
+% Required for inputting international characters
+%\usepackage[utf8]{inputenc} 
+
+% 2018-02-27
+% See fontspec below
+% Output font encoding for international characters
+%\usepackage[T1]{fontenc} 
+
+% 2018-02-27
+% Switching from LATEX to LuaLATEX
+% http://dante.ctan.org/tex-archive/info/luatex/lualatex-doc/lualatex-doc.pdf
+% Don't load fontenc nor textcomp, but load fontspec.
+% The fontspec package Font selection for XeLaTeX and LuaLaTeX
+% Don't use any package that changes the fonts, but use fontspec's commands instead.
+\usepackage{fontspec} 
+\defaultfontfeatures{Ligatures=TeX}
+\usepackage{lualatex-math}
+
+
+% Package for extended math settings, e.g. \eqref
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{unicode-math} % ???
+%\setmainfont{Linux Libertine O}
+%\setsansfont{Linux Biolinum O}
+\setmonofont{Mononoki}[Scale=MatchLowercase]
+\setmathfont{texgyrepagella-math.otf}
+
+% Other fonts
+%\usepackage{mathpazo} % Palatino as regular font
+%\usepackage[euler-digits,small]{eulervm} % Euler as virtual math font. Euler for math and numbers
+\AtBeginDocument{\renewcommand{\hbar}{\hslash}}
+%\usepackage{sourcecodepro} % Source Code Pro as \ttfamily
+%\usepackage{garamondx} % Garamond as regular font
+%\usepackage{cabin} % Cabin as sans-serif
+%\usepackage[varqu,varl]{zi4} % inconsolata as monospace
+%\rmfamily <-- regular font
+%\sffamily <-- sans-serif
+%\ttfamily <-- monospace
+
+% Extended language rules
+%\usepackage[english]{babel} 
+%\usepackage[main=english]{babel} 
+% 2018-02-27
+% polyglossia is a modern replacement for use with LuaLatex
+% https://tex.stackexchange.com/a/371541
+%\DeclareLanguageMapping{english}{british}
+\usepackage{polyglossia}
+%\setdefaultlanguage{english}
+\setmainlanguage[variant=british]{english}
+%\setotherlanguage{danish}
+%\setotherlanguage{german}
+
+
+% Force text to be left-justified
+\usepackage[document]{ragged2e} 
+
+% Make small adjustments to the font-size for prettier results
+\usepackage{microtype} 
+
+% Package for inserting clickable hyperlinks in pdf versions as produced by pdflatex
+\usepackage{hyperref}
+% https://tex.stackexchange.com/a/207745
+\newcommand*{\Appendixautorefname}{Appendix}
+
+
+\usepackage{xcolor}
+\hypersetup{
+    colorlinks,
+    linkcolor={red!50!black},
+    citecolor={blue!50!black},
+    urlcolor={blue!80!black}
+}
+\usepackage[all]{hypcap} % makes it so the hyperref link scrolls to the figure instead of the caption
+
+% Package for including figures. TeX and thus LaTeX was developped before the existence of directory file-structures, but the graphicspath let's you add directories, that the \includegraphics will search.
+\usepackage{graphicx}
+\graphicspath{{fig/}{./figures/}}
+
+% http://tex.stackexchange.com/a/542
+% http://tex.stackexchange.com/q/204410
+% Must go before float
+%\usepackage{fixltx2e}
+
+% Package which lets figures be inline 
+\usepackage{float} 
+
+% 2018-06-06
+% Package for custom nested bullet-points/lists and inline variants
+\usepackage[inline]{enumitem}
+
+% Caption environment
+\usepackage{caption}
+
+% 2018-02-27
+% Dirty workaround. `polyglossia` and `newclude` both define \providelength and
+% \providecounter macros causing a compile error.
+%https://tex.stackexchange.com/questions/297110/difficulties-compiling-document-possibly-related-to-moredefs
+%http://tug.org/pipermail/xetex/2016-February/026384.html
+\let\providelength\relax
+\let\providecounter\relax
+
+% Lets you use \include*{} to avoid the page breaks \include{} normally generates
+\usepackage{newclude} 
+% Lets you format ordinal numbers (2nd, 3rd, 4th etc.) in superscript
+\usepackage{nth}
+
+% Table of Contents
+\usepackage{tocloft} 
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+
+% Use international standard format for dates.
+\usepackage[english]{isodate}
+
+\usepackage[
+    backend=biber,
+    backref=true,
+    hyperref=true,
+    isbn=true,
+    %style=authoryear,
+    %style=numeric-comp,
+    %citestyle=apa,
+    %apabackref=true,
+    %style=ieee,
+    style=ieee,
+    %style=acm,
+    %citestyle=acm,
+    % ACM style: https://tex.stackexchange.com/q/172147
+    %style=trad-abbrv,
+    %firstinits=true,
+    url=true,
+    %doi=true,
+    %eprint=true,
+    %autolang=other,
+    %natbib
+]{biblatex}
+
+
+\addbibresource{diku.bib}
+%\addbibresource{vtdat.bib}
+\DeclareLanguageMapping{english}{english-apa}
+%\input{fixcitation}
+
+% 2016-03-12
+% http://tex.stackexchange.com/q/60921/69620
+% The following defines the Wikipedia-like superscript citations
+\DeclareCiteCommand{\supercite}[\mkbibsuperscript]
+{\iffieldundef{prenote}
+    {}
+    {\BibliographyWarning{Ignoring prenote argument}}%
+    \iffieldundef{postnote}
+    {}
+{\BibliographyWarning{Ignoring postnote argument}}}
+{\usebibmacro{citeindex}%
+\bibopenbracket\usebibmacro{cite}\bibclosebracket}
+{\supercitedelim}
+{}
+%and this overwrites the normal cite:
+%\let\cite=\supercite
+
+
+
+% 2016-01-19
+% Make a blank line between paragraphs
+% http://tex.stackexchange.com/a/74173
+%\usepackage[parfill]{parskip}
+
+
+% Package for typesetting programs. Listings does not support fsharp, but a little modification goes a long way
+%\usepackage{listings}
+\usepackage{color}
+
+%\input{lstconfig}
+
+
+% 2015-10-20
+% http://tex.stackexchange.com/a/142409
+
+% freely scalable fonts
+%\usepackage{fix-cm}
+%
+%\newlength{\eightytt}
+%\newcommand{\testthewidth}{%
+%  \fontsize{\dimen0}{0}\selectfont
+%  \settowidth{\dimen2}{x}%
+%  \ifdim 80\dimen2>\textwidth
+%    \advance\dimen0 by -.1pt
+%    \expandafter\testthewidth
+%  \else
+%    \global\eightytt\dimen0
+%  \fi
+%}
+%
+%\AtBeginDocument{%
+%  \dimen0=\csname f@size\endcsname pt
+%  \begingroup
+%  \ttfamily
+%  \testthewidth
+%  \endgroup
+%  \lstset{
+%    columns=fullflexible,
+%    basicstyle=\fontsize{\eightytt}{1.2\eightytt}\ttfamily
+%  }%
+%}
+
+% To make markdown apparence: `command`
+\newcommand{\md}[1]
+{
+\fcolorbox{gittergray}{gitterblue}{\color{gittergray}{\texttt{ #1 }}} 
+}
+
+\renewcommand\thesection{\arabic{section}}
+
+
+
+% Remove 'Chapter' text from chapter headings
+\usepackage{titlesec}
+\titleformat{\chapter}{\huge\bfseries}{\thechapter.}{20pt}{\huge\bfseries}
+
+% 2016-06-11
+% Used for colouring API table
+% --Einar
+\usepackage{color, colortbl}
+\definecolor{GET}{HTML}{E7F0F7}
+\definecolor{POST}{HTML}{E7F6EC}
+\definecolor{PUT}{HTML}{F9F2E9}
+\definecolor{DELETE}{HTML}{F5E8E8}
+
+\usepackage{tabularx}
+
+% 2016-03-22
+% Make next part counter 0
+\setcounter{part}{-1}
+%\setcounter{section}{-1}
+%\setcounter{section}{-1}
+% Set 'part' counter to use Arabic numerals,
+% since Roman numerals does not have a '0' to show.
+\renewcommand\thepart{\arabic{part}}
+\pagenumbering{arabic}
+
+% 2016-08-11
+% Rotate individual pages to landscape mode
+\usepackage{pdflscape}
+
+\input{frontpage.tex}
+
+% Adds explicit numbering by \numberthis to align* environment.
+\newcommand\numberthis{\addtocounter{equation}{1}\tag{\theequation}}
+
+% 2016-09-11
+% \Better vector notation
+\let\dddot\relax
+\let\ddddot\relax
+%\usepackage{mathtools}
+%\usepackage{esvect}
+%\renewcommand*{\Vec}[1]{\vv{\mathbf{#1}}}%
+
+% 2016-0-15
+% Poisson distributions and pmf
+%\DeclareMathOperator{\Poisson}{Poisson}
+%\DeclareMathOperator{\Cov}{Cov}
+%\DeclareMathOperator{\Std}{Std}
+%\DeclareMathOperator{\Var}{Var}
+%\DeclareMathOperator{\argmin}{argmin}
+%\DeclareMathOperator{\gcd}{gcd}
+\DeclareMathOperator{\lcm}{lcm}
+
+%\definecolor{light-gray}{gray}{0.9}
+%\lstset{language=C, numbers=none, frame=none, backgroundcolor=\color{light-gray} }
+
+
+%\usepackage{siunitx}
+%\sisetup{output-exponent-marker=\ensuremath{\mathrm{e}}}
+
+% lscape.sty Produce landscape pages in a (mainly) portrait document.
+\usepackage{lscape}
+
+\usepackage{multirow}
+
+\usepackage{tikz}
+
+\usepackage{xcolor}
+\usepackage[outputdir=build]{minted}
+%\usemintedstyle{trac}
+\usemintedstyle{tango}
+%\setminted{fontsize=\small}
+
+
+% 2017-12-17
+% http://www.tex.ac.uk/FAQ-verbfile.html
+% provides \verbatiminput{verb.txt}
+\usepackage{verbatim}
+
+% 2018-02-27
+%\usepackage{tombstone} % Conflicts with package `sematic`.
+
+
+% 2018-02-27
+% https://tex.stackexchange.com/a/380808
+% The fvextra package is loaded by minted, so you should load minted before csquotes
+%\usepackage[style=danish,danish=guillemets,strict=true]{csquotes}
+\usepackage[style=french,french=guillemets,strict=true]{csquotes}
+%\usepackage[style=english,strict=true]{csquotes}
+%\usepackage[style=english,english=british,strict=true]{csquotes}
+
+
+
+% 2018-03-01
+% Fix border
+% https://tex.stackexchange.com/a/88384/69620 
+\makeatletter
+\renewenvironment{minted@colorbg}[1]{
+\setlength{\fboxsep}{\z@}
+\def\minted@bgcol{#1}
+%\noindent
+\begin{lrbox}{\minted@bgbox}
+\begin{minipage}{\linewidth}}
+{\end{minipage}
+\end{lrbox}%
+\colorbox{\minted@bgcol}{\usebox{\minted@bgbox}}}
+\makeatother
+
+\definecolor{LightGray}{HTML}{f8f9fa}
+
+\newmintedfile[ehaskell]{haskell}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newmintedfile[efsharp]{fsharp}{
+    tabsize=8, 
+    %fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newmintedfile[eprolog]{prolog}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newminted{prolog}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newmintedfile[etext]{text}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+\newminted{text}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newmintedfile[ecuda]{cuda}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastline=17
+}
+
+\newminted{bash}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastlne=17
+}
+
+\newmintedfile{gas}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    bgcolor=LightGray,
+    rulecolor=\color{gray!40},
+    linenos
+    %baselinestretch=1.2,
+    %firstline=0, 
+    %lastlne=17
+}
+
+% 2018-03-13
+% Adds a new type of label for \autoref{lst:mysourcecode.c}
+\providecommand*{\listingautorefname}{Source-Code Listing}
+\def\listingautorefname{Source-Code Listing}
+
+
+\newcounter{refs}
+\makeatletter
+\defbibenvironment{counter}
+  {\setcounter{refs}{0}
+  \renewcommand{\blx@driver}[1]{}
+  }
+  {We have \therefs references}
+  {\stepcounter{refs}}
+\makeatother
+
+
+
+
+
+
+
+
+
+\usepackage{latexsym}
+%\newcommand{\qed}{\rule{2mm}{2mm}}
+
+
+
+\newtheorem*{etheorem}{Theorem}
+
+% https://tex.stackexchange.com/questions/302255/what-is-the-symbol-of-end-of-a-proof
+%\renewcommand{\qedsymbol}{\ensuremath{\blacksquare}}
+\renewcommand{\qedsymbol}{\ensuremath{\rule{2mm}{2mm}}}
+
+
+\DeclareMathOperator{\abs}{abs}
+
+% https://tex.stackexchange.com/a/118217/69620
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+
+% 2018-04-09
+% Defines `\inference` environment used for Operational Semantics
+\usepackage{semantic}
+
+%\usepackage[export]{adjustbox}
+%\usepackage{subfig}
+\usepackage{subcaption}
+
+\newmintedfile[uissql]{sql}{
+    tabsize=8, 
+    fontsize=\footnotesize, 
+    frame=lines,
+    framesep=5\fboxrule,
+    framerule=1pt,
+    %bgcolor=LightGray,
+    %rulecolor=\color{gray!40},
+    linenos
+}
+
+
+%\usepackage[toc,page,title,titletoc,header]{appendix}
+
+\usepackage{multicol}
+
+
+
+%\setlength{\parindent}{1cm} % Default is 15pt.
+\setlength{\parindent}{15pt} % Default is 15pt.
+

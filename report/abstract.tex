@@ -1,0 +1,25 @@
+\begin{abstract}
+    % https://tex.stackexchange.com/a/1598/69620
+    \noindent First we port the existing \textsc{bfast} algorithm
+    from Futhark keeping the translated code as close to the source as possible.
+    
+    \noindent Second we use validate our translation by leveraging the Futhark
+    test framework.
+
+    \noindent Third we apply various optimizations to improve both temporal
+    locality by tiling and shared memory usage, and spatial locality by
+    coalesced memory accesses using matrix transpositions. To apply these
+    optimizations we use several transformations and code restructuring
+    techniques including loop interchange,
+    stripmining, loop distribution, hoisting and array expansion.
+
+    \noindent Additionally, we provide benchmarks for our optimizations
+    including regressions. 
+
+\end{abstract}
+
+%\begin{figure}[H]
+%    \centering
+%    \includegraphics[width=0.4\textwidth]{denning.jpg}
+%        \caption{Peter James Denning by Louis Fabian Bachrach.}\label{fig:denning}
+%\end{figure}
