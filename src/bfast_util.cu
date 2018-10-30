@@ -263,37 +263,60 @@ void bfast_run(const struct bfast_run_config *cfg, const char *name,
   CUDA_SUCCEED(cudaDeviceSynchronize());
 
   if (cfg->measure_steps) {
-    struct timer *t = (struct timer *)malloc(num_steps * sizeof(struct timer));
+    struct timer *t = 
+      (struct timer *)malloc(cfg->num_run * num_steps * sizeof(struct timer));
     for (int i = 0; i < num_steps; i++) {
-      timer_reset(&t[i]);
+      for (int j = 0; j < cfg->num_runs; j++) {
+        timer_reset(&t[i][j]);
+      }
     }
     for (int i = 0; i < num_steps; i++) {
       for (int j = 0; j < cfg->num_runs; j++) {
-        timer_start(&t[i]);
+        timer_start(&t[i][j]);
         bfast_run_step(s, &steps[i]);
         CUDA_SUCCEED(cudaDeviceSynchronize());
-        timer_stop(&t[i]);
+        timer_stop(&t[i][j]);
       }
     }
     if (cfg->print_runtimes) {
+
       float tot_time = 0;
-      for (int i = 0; i < num_steps; i++) {
-        tot_time += timer_elapsed(&t[i]);
+      float tot_mean = 0;
+      float *tot_times = (struct timer *)malloc(cfg->num_run * sizeof(float));
+      for (int j = 0; j < cfg->num_runs; j++) {
+        float tot_times[j] = 0;
       }
+
+      for (int j = 0; j < cfg->num_runs; j++) {
+        for (int i = 0; i < num_steps; i++) {
+          tot_times[j] += (&t[i][j])->sum;
+        }
+      }
+
+      for (int j = 0; j < cfg->num_runs; j++) {
+        tot_time += tot_times[j];
+      }
+      tot_mean = tot_time/(float)num_runs;
+
       fprintf(stderr, "\n%s (all times are an average of %d runs):\n\n",
               name, cfg->num_runs);
 
-
       size_t max_width = 0;
       for (int i = 0; i < num_steps; i++) {
-        max_width = max(max_width, strlen(steps[i].desc));
+        desc_max_width = max(desc_max_width, strlen(steps[i].desc));
       }
 
       for (int i = 0; i < num_steps; i++) {
-        fprintf(stderr, "%-*s %10.2f µs\n", max_width,
+        fprintf(stderr, "%-*s %10.2f µs\n", desc_max_width,
                 steps[i].desc, timer_elapsed(&t[i]));
       }
-      fprintf(stderr,"\n\n%-*s %10.2f µs\n", max_width, "Total runtime", tot_time);
+      fprintf(stderr,"\n\n%-*s %10.2f µs\n", desc_max_width, "Mean total runtime",
+          tot_mean);
+
+      /*statistics stats = statistify(&t, cfg->num_runs);
+      fprintf(stderr,"Total runtime stats: Variance σ²: %f, Standard Deviation σ:, Relative SD
+          σ/(sample mean): %f", stats->variance, stats->stddev, stats->rsd);
+          */
     }
     free(t);
   } else {
