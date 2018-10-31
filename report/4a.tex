@@ -1,0 +1,51 @@
+\section{Kernel 4a:  Matrix-matrix multiplication}
+
+The Futhark code in \autoref{fut:kernel4a} corresponds to a matrix matrix
+multiplication with an additional filtering. 
+
+This kernel is interesting because it can be implemented in different ways
+resulting in different tradeoffs. Summarized we can either 
+
+\begin{enumerate*}
+    \item minimize the runnning time for this single kernel, or
+    \item minimize the running time over all kernels. But,
+    \item we cannot optimize both.
+\end{enumerate*}
+
+In the end we want to optimize (2).
+
+Assuming floating-point numbers work as commutative scalars, the transpose
+identity for a matrix product of such elements is given by:
+
+\[ (AB)^T = B^T A^T. \]
+
+What this kernel does, besides the filtering, corresponds to calculating
+
+\[ \texttt{beta0} = (XY^T)^T = YX^T \]
+\[ \texttt{beta0}^T = XY^T \]
+
+according to above identity. So we need to compare the cost of transposing
+\(X\), \(Y\) and \(\texttt{beta0}^T\) as well as whether the following kernels
+are faster with the transposed or untransposed versions of X, Y or
+\texttt{beta0}. 
+
+After different attempts found in \texttt{src/bfast\_step\_4a.cu} we found the
+shortest running time for all steps simply to use the block and register tiled
+version of matrix matrix multiplication from the weekly assignment. This can be
+seen in \autoref{cuda:kernel4a}. Notice the added conditional on line 59 which
+implements the filtering.
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=133,lastline=133]{../src/fut-handout/bfast-distrib.fut}
+    \caption{}
+    \label{fut:kernel4a}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4a.cu}
+    \caption{CUDA kernel for block and register tiled version of matrix matrix
+    multiplication.}
+    \label{cuda:kernel4a}
+\end{figure}
