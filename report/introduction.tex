@@ -1,2 +1,57 @@
+\section{Introduction}
 % Semantic preserving
 % Interpretations of values.
+
+\subsection{\textsc{BFAST} article}
+The project is based on \cite{bfast}.
+
+Break detection
+
+\texttt{nan}.
+
+interpretation of
+
+
+\subsection{Non-optimization}
+While not an optimization, this is still an in important learning point for us,
+that gave us a speed up from roughly 36ms to 26ms.
+We will not concern us with further interpretation, as the focus is on
+semantic preserving code optimization.
+
+
+\subsection{Thread guards??}
+Not an optimization Dynamic block size vs worst-case
+Despite we do this we still include a \texttt{return} statement in the begiining
+of each kernel in order as an sanity check. Ideally no threads should be spawned
+just to return immediately.
+
+\subsection{Rowmajor form and macros}
+
+The matrices are dense and stored in a row-major order. This means that all elements
+of row \(n\) is stored before elements of row \(n+1\). Naturally all elements
+within a row is stored in the order of the their corresponding column.
+
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=19,lastline=20]{../src/bfast_util.cu.h}
+    \caption{Macros}
+    \label{cuda:macros}
+\end{figure}
+
+
+\begin{description}
+    \item[\texttt{IDX\_2D(i,j,columns)}] The two macros in \autoref{cuda:marcros} are used to
+calculate the offset into a two-dimentional array when only the start address is
+passed as in the case for passing a pointer to an array of arrays in C-like languages.
+
+\item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
+\(\ceil*{x/y}\) without using floating-point arithmetic assuming both \(x, y \in
+\mathbb{N}^{+} \).
+
+\end{description}
+
+    
+
+
+
