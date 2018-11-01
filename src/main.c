@@ -11,6 +11,7 @@
 extern void bfast_step_1_test(struct bfast_run_config *);
 extern void bfast_step_2_test(struct bfast_run_config *);
 extern void bfast_step_2_tiled_test(struct bfast_run_config *);
+extern void bfast_step_2_shr_test(struct bfast_run_config *);
 extern void bfast_step_3_test(struct bfast_run_config *);
 extern void bfast_step_4a_test(struct bfast_run_config *);
 extern void bfast_step_4a_flipped_test(struct bfast_run_config *);
@@ -44,6 +45,7 @@ int run_entry(const char *entry, struct bfast_run_config *cfg)
     {          "bfast-1",          bfast_step_1_test },
     {          "bfast-2",          bfast_step_2_test },
     {    "bfast-2-tiled",    bfast_step_2_tiled_test },
+    {      "bfast-2-shr",      bfast_step_2_shr_test },
     {          "bfast-3",          bfast_step_3_test },
     {         "bfast-4a",         bfast_step_4a_test },
     { "bfast-4a-flipped", bfast_step_4a_flipped_test },
@@ -63,6 +65,7 @@ int run_entry(const char *entry, struct bfast_run_config *cfg)
     // Full BFAST runs
     {      "bfast-naive",                bfast_naive },
     {        "bfast-opt",                  bfast_opt },
+    {    "bfast-opt-alt",              bfast_opt_alt },
   };
 
   for (size_t i = 0; i < sizeof(entries)/sizeof(entries[0]); i++) {
