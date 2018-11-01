@@ -1,37 +1,56 @@
 \section{Introduction}
+% Keywords:
 % Semantic preserving
 % Interpretations of values.
 
-\subsection{\textsc{BFAST} article}
-The project is based on \cite{bfast}.
+\subsection{The \textsc{BFAST} algorithm}
+\subsubsection{The \textsc{BFAST} article}
+The project is based on the algorithm described in \cite{bfast}. More precise it
+is an adaption of the implementation written in Futhark and handed out as
+\texttt{bfast-distrib.fut}.
 
-Break detection
+\subsubsection{Purpose of \textsc{BFAST}}
+The algorithm produces an array of values for each pixel in an image time
+series. The values magnitude describes the change in its color value. The algorithm accounts
+for seasonal trends. High values in the output represents abrupt changes and are
+called \enquote{breaks}.
+Furthermore the algrithm must take into account the presence of \texttt{NaN}
+values in datasets.
 
-\texttt{nan}.
-
-interpretation of
-
-
-\subsection{Non-optimization}
-While not an optimization, this is still an in important learning point for us,
-that gave us a speed up from roughly 36ms to 26ms.
 We will not concern us with further interpretation, as the focus is on
-semantic preserving code optimization.
+semantics-preserving code optimizations and their impact on running time.
+
+\subsection{Code layout}
+
+\subsubsection{Guards} In the beginning of each kernel we include a guard, i.e.
+an early \texttt{return} statement, as an sanity check. A simple example can be
+seen \autoref{cuda:macros}.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=204,lastline=204]{../src/kernels/bfast_others.cu}
+    \caption{Guard to provide an early exit if thread index is larger than expected.}
+    \label{cuda:macros}
+\end{figure}
+
+Ideally no threads should be spawned just to return immediately. However, this
+does happen for some kernels, for example when the block size does not divide
+the size of the dataset, and the last block has more threads than work.
+
+\subsubsection{Dynamic block sizes}
+While not an optimization per se, using dynamically calculated values
+instead of statically \enquote{worst-case} values for block sizes, provided
+a significant reduction in running time from around 36 ms to 24 ms. 
+
+%This alone reduced the running time of the  baseline translation found in
+%\texttt{src/bfast-naive.cu} from 50-70 ms to around 26 ms.
 
 
-\subsection{Thread guards??}
-Not an optimization Dynamic block size vs worst-case
-Despite we do this we still include a \texttt{return} statement in the begiining
-of each kernel in order as an sanity check. Ideally no threads should be spawned
-just to return immediately. This does happen for some kernels, when the block
-size does not divide the size of the dataset, and the last block more threads
-than work.
+\subsubsection{Row-major order and macros}
 
-\subsection{Rowmajor form and macros}
-
-The matrices are dense and stored in a row-major order. This means that all elements
-of row \(n\) is stored before elements of row \(n+1\). Naturally all elements
-within a row is stored in the order of the their corresponding column.
+The matrices are dense and stored in a row-major order. This means that all
+elements of row \(n\) is stored before elements of row \(n+1\). Naturally all
+elements within a row is stored in the order of the their corresponding column.
 
 
 \begin{figure}[H]
@@ -41,45 +60,44 @@ within a row is stored in the order of the their corresponding column.
     \label{cuda:macros}
 \end{figure}
 
+The two macros in \autoref{cuda:macros} are used throughout the code base to
+ease understanding the intention of the resulting calculations.
 
 \begin{description}
-    \item[\texttt{IDX\_2D(i,j,columns)}] The two macros in \autoref{cuda:marcros} are used to
-calculate the offset into a two-dimentional array when only the start address is
-passed as in the case for passing a pointer to an array of arrays in C-like languages.
 
-\item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
-\(\ceil*{x/y}\) without using floating-point arithmetic assuming both \(x, y \in
-\mathbb{N}^{+} \).
+    \item[\texttt{IDX\_2D(i,j,columns)}] is used to calculate the
+        offset into a two-dimentional array when only the starting address is
+        passed. This is typically the case for passing a pointer to an array of
+        arrays in C-like languages such as CUDA.
+
+    \item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
+        \(\ceil*{x/y}\) without using floating-point arithmetic assuming both
+        \(x, y \in \mathbb{N}^{+} \).
 
 \end{description}
 
     
 
-\subsection{Variables and their bounds}
+\subsubsection{Dataset and variables}
+
+The dataset \texttt{sahara} was supplied for testing. Certain quantities
+describing the dataset input and output are listed in \autoref{tbl:scalars}.
+
 
 \begin{figure}[H]
     \centering
     \begin{tabular}{l l r r r}
-        Variable & Interpretation              & Lower bound & \texttt{sahara} dataset & Upper bound \\ \hline
-        n        & length of historical period & 1           & 228                     & N-1 \\
-        N        & length of full period       &             & 414                     & 1024   \\
-        N-n      & length of monitor period    &             & 186                     & \\
-        k        &                             &             & 3                       & \\
-        k2p2     & k\times2                    &             & 8                       & \\
-        frec     & images per                  &             &                         & 12.0  \\
-        m        & number of pixels            &             &                         & 67968 \\
-        hfrac    &                             &             & 0.25                    & \\
-        lam      &                             &             & 1.736126                & 
+    \textbf{Variable} & \textbf{Interpretation}              & \textbf{Lower bound} & \textbf{\texttt{sahara} dataset} & \textbf{Upper bound} \\ \hline
+        n                & length of historical period & 1           & 228                     & N-1 \\
+        N                & length of full period       &             & 414                     & 1024   \\
+        N-n              & length of monitor period    &             & 186                     & \\
+        k                &                             &             & 3                       & \\
+        k2p2             & \(k\times2 + 2\)            &             & 8                       & \\
+        frec             & images per                  &             & 12.0                    & \\
+        m                & number of pixels            &             & 67968                   & \\
+        hfrac            &                             &             & 0.25                    & \\
+        lam              &                             &             & 1.736126                &
     \end{tabular}
-    \caption{List of input scalar variables, their bounds, and values for the
-    \texttt{sahara} dataset.}
+    \caption{List of input scalar variables, their bounds, and values for the \texttt{sahara} dataset.}
     \label{tbl:scalars}
 \end{figure}
-
-
-
-
-
-
-
-
