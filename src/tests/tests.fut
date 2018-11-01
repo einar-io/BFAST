@@ -1,6 +1,6 @@
 
 -- ==
--- entry: bfast-naive bfast-opt
+-- entry: bfast-naive bfast-opt bfast-opt-alt
 -- compiled input @ ../../data/sahara.in.gz
 -- output @ ../../data/sahara.out.gz
 
@@ -15,7 +15,7 @@
 -- output @ ../../data/sahara-1.out.gz
 
 -- ==
--- entry: bfast-2 bfast-2-tiled
+-- entry: bfast-2 bfast-2-tiled bfast-2-shr
 -- compiled input @ ../../data/sahara-all.in.gz
 -- output @ ../../data/sahara-2.out.gz
 

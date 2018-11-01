@@ -13,6 +13,7 @@ void bfast_step_7b_run(struct bfast_state *s);
 // bfast_step_2.cu
 void bfast_step_2_run(struct bfast_state *s);
 void bfast_step_2_tiled_run(struct bfast_state *s);
+void bfast_step_2_shr_run(struct bfast_state *s);
 
 //  bfast_step_4a.cu
 void bfast_step_4a_run(struct bfast_state *s);
@@ -76,6 +77,25 @@ extern "C" void bfast_opt(struct bfast_run_config *cfg)
     BFAST_STEP(bfast_step_8_opt2_run)
   };
   bfast_run(cfg, "bfast-opt", steps, NUM_ELEMS(steps));
+}
+
+extern "C" void bfast_opt_alt(struct bfast_run_config *cfg)
+{
+  const struct bfast_step steps[] = {
+    BFAST_STEP(bfast_step_1_run),
+    BFAST_TRANSPOSE(X, transpose),
+    BFAST_STEP(bfast_step_2_shr_run),
+    BFAST_STEP(bfast_step_3_run),
+    BFAST_STEP(bfast_step_4a_flipped_run),
+    BFAST_STEP(bfast_step_4b_run),
+    BFAST_STEP(bfast_step_4c_tiled_run),
+    BFAST_STEP(bfast_step_5_run),
+    BFAST_STEP(bfast_step_6_reuse_run),
+    BFAST_STEP(bfast_step_7a_run),
+    BFAST_STEP(bfast_step_7b_run),
+    BFAST_STEP(bfast_step_8_opt2_run)
+  };
+  bfast_run(cfg, "bfast-opt-alt", steps, NUM_ELEMS(steps));
 }
 
 
