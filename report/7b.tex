@@ -1,0 +1,39 @@
+\subsection{
+    Step 7b: \texttt{BOUNDS}
+}
+
+This step is translated from \autoref{fut:kernel7b} into \autoref{cuda:kernel7b}.
+Notice that this kernel does not
+depend on any input. It produces an output array of length \texttt{N-n}
+approximately around 186. Initially we decided to do it in host code, arguing we
+would not save much by parallellize it. It was the kernel with the shortest
+running time of 9.80 µs, and thus the least opportunity.
+
+However, since we needed the output to reside in device memory for the later
+kernels, we chose to move it to device code in the end. This has actually caused
+towards a 200\% slowdown to around 29.12 µs for some measurements.  But since
+this negible, we chose to keep in on the device.  The launch code is seen in
+\autoref{cuda:kernel7b_run}.
+
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=191,lastline=194]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Futhark function for calculating \texttt{BOUND}.}
+    \label{fut:kernel7b}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=327,lastline=345]{../src/kernels/bfast_others.cu}
+    \caption{CUDA kernel 7b for calculating  \texttt{BOUND}.}
+    \label{cuda:kernel7b}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=347,lastline=356]{../src/kernels/bfast_others.cu}
+    \caption{CUDA launch syntax for kernel 7.}
+    \label{cuda:kernel7b_run}
+\end{figure}
+

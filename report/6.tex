@@ -15,23 +15,35 @@ In our translation, seen in \autoref{cuda:kernel6},
 we reuse shared memory for separate tasks on line 37 by aliasing a pointer to
 it. 
 
-Using the rule of thumb attributed to Aske Dorge on \cite[p. 29]{pmphL5}, which
-states that:
+We do this based on the rule of thumb attributed to Aske Dorge in \cite[p.
+29]{pmphL5}, which states that:
 \enquote{
     \textit{
-\approx 8 words of shared memory per thread does not degrade performance
-}}, 
-we should be okay
-with using two arrays of 1024 elements for \(n\approx400\) giving around
-\(\nicefrac{2048}{400} = 5\). However, experiment shows that the kernel runtime goes
-from 2144.56 µs when reusing the shared memory to 2508.82 µs when allocating a
-new array, equaling a slowdown close of 17\%. We reason that this is safe to
-do, as the shared memory is never used for more than one purpose at a time.
+        \approx 8 words of shared memory per thread does not degrade performance.
+}}
+
+If we use two separately allocated arrays of 1024 words for \(n\approx228\)
+giving around \(\nicefrac{2048}{228} = 8.98\) words, experiments show that
+the kernel runtime goes from 2144.56 µs to
+2508.82 µs equaling a slowdown close of 17\% and confirming the rule.
+
+When we reuse the memory, we get a factor of \(\nicefrac{1024}{228} = 4.49\)
+words per thread. We make sure to never use the memory location for more than
+one purpose at a time.
 
 \begin{figure}[H]
     \centering
     \ecuda[firstline=2,lastline=49]{../src/kernels/bfast_step_6.cu}
     \caption{CUDA kernel for calculating \texttt{nss} and \texttt{sigmas}.}
     \label{cuda:kernel6}
+\end{figure}
+
+The launch code is seen in \autoref{cuda:orch6}.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=51,lastline=62]{../src/kernels/bfast_step_6.cu}
+    \caption{CUDA orchestrating code for kernel 6.}
+    \label{cuda:orch6}
 \end{figure}
 

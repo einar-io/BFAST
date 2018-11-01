@@ -1,0 +1,35 @@
+\subsection{
+    Step 7a: Moving sums first \texttt{MO\_fsts}
+}
+
+The moving sums first element is calculated in \autoref{fut:kernel7a}. We have
+translated it to CUDA in \autoref{cuda:kernel7a}. It is launched at 
+\autoref{cuda:kernel7a_run}.
+
+
+
+
+
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=181,lastline=188]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Futhark function for calculating \texttt{MO\_fsts}.}
+    \label{fut:kernel7a}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=275,lastline=299]{../src/kernels/bfast_others.cu}
+    \caption{CUDA kernel for calculating  \texttt{MO\_fsts}.}
+    \label{cuda:kernel7a}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=301,lastline=312]{../src/kernels/bfast_others.cu}
+    \caption{CUDA kernel for calculating  \texttt{MO\_fsts}.}
+    \label{cuda:kernel7a_run}
+\end{figure}
+

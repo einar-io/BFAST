@@ -23,7 +23,9 @@ semantic preserving code optimization.
 Not an optimization Dynamic block size vs worst-case
 Despite we do this we still include a \texttt{return} statement in the begiining
 of each kernel in order as an sanity check. Ideally no threads should be spawned
-just to return immediately.
+just to return immediately. This does happen for some kernels, when the block
+size does not divide the size of the dataset, and the last block more threads
+than work.
 
 \subsection{Rowmajor form and macros}
 
@@ -52,6 +54,32 @@ passed as in the case for passing a pointer to an array of arrays in C-like lang
 \end{description}
 
     
+
+\subsection{Variables and their bounds}
+
+\begin{figure}[H]
+    \centering
+    \begin{tabular}{l l r r r}
+        Variable & Interpretation              & Lower bound & \texttt{sahara} dataset & Upper bound \\ \hline
+        n        & length of historical period & 1           & 228                     & N-1 \\
+        N        & length of full period       &             & 414                     & 1024   \\
+        N-n      & length of monitor period    &             & 186                     & \\
+        k        &                             &             & 3                       & \\
+        k2p2     & k\times2                    &             & 8                       & \\
+        frec     & images per                  &             &                         & 12.0  \\
+        m        & number of pixels            &             &                         & 67968 \\
+        hfrac    &                             &             & 0.25                    & \\
+        lam      &                             &             & 1.736126                & 
+    \end{tabular}
+    \caption{List of input scalar variables, their bounds, and values for the
+    \texttt{sahara} dataset.}
+    \label{tbl:scalars}
+\end{figure}
+
+
+
+
+
 
 
 

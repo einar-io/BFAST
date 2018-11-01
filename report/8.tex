@@ -1,0 +1,18 @@
+\subsection{
+    Step 8: Moving sums
+}
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=197,lastline=217]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Futhark function for calculating \texttt{breakss}.}
+    \label{fut:kernel8}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=2,lastline=73]{../src/kernels/bfast_step_8.cu}
+    \caption{CUDA kernel for calculating  \texttt{breakss}.}
+    \label{cuda:kernel8}
+\end{figure}
+
