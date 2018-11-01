@@ -30,6 +30,7 @@ extern void bfast_step_8_opt_test(struct bfast_run_config *);
 extern void bfast_step_8_opt2_test(struct bfast_run_config *);
 extern void bfast_naive(struct bfast_run_config *);
 extern void bfast_opt(struct bfast_run_config *cfg);
+extern void bfast_opt_alt(struct bfast_run_config *cfg);
 
 // futhark-test only prints our stderr output if we exit with a non-zero exit
 // code. For anything that needs to be printed even if we return 0, use this.
