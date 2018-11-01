@@ -1,7 +1,15 @@
 \section{Kernel 4a:  Matrix-matrix multiplication}
 
-The Futhark code in \autoref{fut:kernel4a} corresponds to a matrix matrix
-multiplication with an additional filtering. 
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=100,lastline=110]{../src/fut-handout/bfast-distrib.fut}
+    \caption{}
+    \label{fut:kernel4}
+\end{figure}
+
+
+Line 133 in the Futhark code in \autoref{fut:kernel4} corresponds to a matrix
+matrix multiplication with an additional filtering. 
 
 This kernel is interesting because it can be implemented in different ways
 resulting in different tradeoffs. Summarized we can either 
@@ -35,17 +43,43 @@ version of matrix matrix multiplication from the weekly assignment. This can be
 seen in \autoref{cuda:kernel4a}. Notice the added conditional on line 59 which
 implements the filtering.
 
+The loop unrolling and register tiling is performed by the \texttt{\#pragma
+unroll} on line 37, 57 and 68 of \autoref{cuda:kernel4a}.
+
 \begin{figure}[H]
     \centering
-    \ehaskell[firstline=133,lastline=133]{../src/fut-handout/bfast-distrib.fut}
-    \caption{}
-    \label{fut:kernel4a}
+    \ehaskell[firstline=127,lastline=138]{../src/fut-handout/bfast-distrib.fut}
+    \caption{The original Futhark functions representing step 4.}
+    \label{fut:kernel4}
 \end{figure}
 
 \begin{figure}[H]
     \centering
     \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4a.cu}
     \caption{CUDA kernel for block and register tiled version of matrix matrix
-    multiplication.}
+    multiplication with filtering.}
     \label{cuda:kernel4a}
 \end{figure}
+
+
+\section{Kernel 4b:  Matrix-matrix multiplication}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=131,lastline=164]{../src/kernels/bfast_others.cu}
+    \caption{CUDA kernel for calculating \texttt{beta}.}
+    \label{cuda:kernel4b}
+\end{figure}
+
+
+\section{Kernel 4c:  Matrix-matrix multiplication}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4c.cu}
+    \caption{CUDA kernel for block and register tiled version of matrix matrix multiplication.}
+    \label{cuda:kernel4c}
+\end{figure}
+
+
+

@@ -1,0 +1,37 @@
+\subsection{
+    Step 6: \texttt{ns} and \texttt{sigma}
+}
+
+Step 6 corresponds to the code seen in \autoref{fut:kernel6}.
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=165,lastline=178]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Futhark function for calculating \texttt{nss} and \texttt{sigmas}.}
+    \label{fut:kernel6}
+\end{figure}
+
+In our translation, seen in \autoref{cuda:kernel6},
+we reuse shared memory for separate tasks on line 37 by aliasing a pointer to
+it. 
+
+Using the rule of thumb attributed to Aske Dorge on \cite[p. 29]{pmphL5}, which
+states that:
+\enquote{
+    \textit{
+\approx 8 words of shared memory per thread does not degrade performance
+}}, 
+we should be okay
+with using two arrays of 1024 elements for \(n\approx400\) giving around
+\(\nicefrac{2048}{400} = 5\). However, experiment shows that the kernel runtime goes
+from 2144.56 µs when reusing the shared memory to 2508.82 µs when allocating a
+new array, equaling a slowdown close of 17\%. We reason that this is safe to
+do, as the shared memory is never used for more than one purpose at a time.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=2,lastline=49]{../src/kernels/bfast_step_6.cu}
+    \caption{CUDA kernel for calculating \texttt{nss} and \texttt{sigmas}.}
+    \label{cuda:kernel6}
+\end{figure}
+
