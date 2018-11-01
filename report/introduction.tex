@@ -24,13 +24,13 @@ semantics-preserving code optimizations and their impact on running time.
 
 \subsubsection{Guards} In the beginning of each kernel we include a guard, i.e.
 an early \texttt{return} statement, as an sanity check. A simple example can be
-seen \autoref{cuda:macros}.
+seen \autoref{cuda:guards}.
 
 \begin{figure}[H]
     \centering
     \ecuda[firstline=204,lastline=204]{../src/kernels/bfast_others.cu}
     \caption{Guard to provide an early exit if thread index is larger than expected.}
-    \label{cuda:macros}
+    \label{cuda:guards}
 \end{figure}
 
 Ideally no threads should be spawned just to return immediately. However, this

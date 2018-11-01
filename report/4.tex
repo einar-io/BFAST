@@ -1,10 +1,22 @@
-\section{Kernel 4a:  Matrix-matrix multiplication}
+\subsection{Kernel 4}
+
+We have chosen to split step 4 seen in \autoref{fut:kernel4} into 3 different
+kernels, which we will investigate in the following three subsections.
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=127,lastline=138]{../src/fut-handout/bfast-distrib.fut}
+    \caption{The original Futhark functions representing step 4.}
+    \label{fut:kernel4}
+\end{figure}
+
+\subsubsection{Kernel 4a:  Matrix-matrix multiplication}
 
 \begin{figure}[H]
     \centering
     \ehaskell[firstline=100,lastline=110]{../src/fut-handout/bfast-distrib.fut}
     \caption{}
-    \label{fut:kernel4}
+    \label{fut:kernel4a}
 \end{figure}
 
 
@@ -46,12 +58,6 @@ implements the filtering.
 The loop unrolling and register tiling is performed by the \texttt{\#pragma
 unroll} on line 37, 57 and 68 of \autoref{cuda:kernel4a}.
 
-\begin{figure}[H]
-    \centering
-    \ehaskell[firstline=127,lastline=138]{../src/fut-handout/bfast-distrib.fut}
-    \caption{The original Futhark functions representing step 4.}
-    \label{fut:kernel4}
-\end{figure}
 
 \begin{figure}[H]
     \centering
@@ -62,7 +68,7 @@ unroll} on line 37, 57 and 68 of \autoref{cuda:kernel4a}.
 \end{figure}
 
 
-\section{Kernel 4b:  Matrix-matrix multiplication}
+\subsubsection{Kernel 4b:  Matrix-matrix multiplication}
 
 \begin{figure}[H]
     \centering
@@ -72,7 +78,7 @@ unroll} on line 37, 57 and 68 of \autoref{cuda:kernel4a}.
 \end{figure}
 
 
-\section{Kernel 4c:  Matrix-matrix multiplication}
+\subsubsection{Kernel 4c:  Matrix-matrix multiplication}
 
 \begin{figure}[H]
     \centering
