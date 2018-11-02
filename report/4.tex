@@ -1,4 +1,4 @@
-\subsection{Kernel 4}
+\subsection*{Kernel 4}
 
 We have chosen to split step 4 seen in \autoref{fut:kernel4} into 3 different
 kernels, which we will investigate in the following three subsections.
@@ -10,82 +10,145 @@ kernels, which we will investigate in the following three subsections.
     \label{fut:kernel4}
 \end{figure}
 
-\subsubsection{Kernel 4a:  Matrix-matrix multiplication}
-
-\begin{figure}[H]
-    \centering
-    \ehaskell[firstline=100,lastline=110]{../src/fut-handout/bfast-distrib.fut}
-    \caption{}
-    \label{fut:kernel4a}
-\end{figure}
-
+\subsection{Kernel 4a: Matrix-matrix multiplication}
 
 Line 133 in the Futhark code in \autoref{fut:kernel4} corresponds to a matrix
 matrix multiplication with an additional filtering. 
-
+%
 This kernel is interesting because it can be implemented in different ways
-resulting in different tradeoffs. Summarized we can either 
-
-\begin{enumerate*}
+resulting in different tradeoffs. Summarized, we can either 
+%
+\begin{enumerate*}[label=(\arabic*)]
     \item minimize the runnning time for this single kernel, or
-    \item minimize the running time over all kernels. But,
+    \item minimize the running time over all kernels. But
     \item we cannot optimize both.
 \end{enumerate*}
+%
+Our priority is to optimize (2).
+%
+Our optimized kernel  can be seen in \autoref{cuda:kernel4a}. It was derived in
+the course through similar analysis as in kernel 2, with the addition of the
+added conditional on line 58 which implements the filtering which has been
+hoisted out from the loop on line 60.  %LINUM
 
-In the end we want to optimize (2).
+What this kernel effectively calculates, besides the filtering, is 
+the matrix product \(XY^T\). But since the arguments we got are \(X\) and \(Y\),
+and we need \texttt{beta0}, we need to transpose the the input and the output
+because:
 
-Assuming floating-point numbers work as commutative scalars, the transpose
-identity for a matrix product of such elements is given by:
+\[ \texttt{beta0} = (XY^T)^T  \]
 
-\[ (AB)^T = B^T A^T. \]
+This means that two separate transpose operations are needed in addition to the
+matrix matrix multiplication kernel, and their cost needs to be included. They
+can be seen in \autoref{tbl:transposecost}.
 
-What this kernel does, besides the filtering, corresponds to calculating
 
-\[ \texttt{beta0} = (XY^T)^T = YX^T \]
-\[ \texttt{beta0}^T = XY^T \]
 
-according to above identity. So we need to compare the cost of transposing
-\(X\), \(Y\) and \(\texttt{beta0}^T\) as well as whether the following kernels
-are faster with the transposed or untransposed versions of X, Y or
-\texttt{beta0}. 
+\begin{figure}[H]
+    \centering
+    \begin{tabular}{l r}
+        \textbf{Operation} & \textbf{Duration} \\ \hline
+    %    transpose\_X               & 13.10 µs \\ \hline
+        transpose\_Y                & 1293.58 µs \\
+        bfast\_step\_4a\_tiled\_run & 710.69 us \\
+        untranspose\_beta0          & 78.74 µs \\
+        \textbf{Step 4 total}              &  2083.01 µs
+    \end{tabular}
+    \caption{The cost of transpose kernels and the block and register tiled
+    version of kernel 4a.}
+        \label{tbl:transposecost}
+\end{figure}
 
-After different attempts found in \texttt{src/bfast\_step\_4a.cu} we found the
-shortest running time for all steps simply to use the block and register tiled
-version of matrix matrix multiplication from the weekly assignment. This can be
-seen in \autoref{cuda:kernel4a}. Notice the added conditional on line 59 which
-implements the filtering.
+After different attempts, which can be seen in \texttt{src/bfast\_step\_4a.cu},
+we found the shortest running time for all steps simply to use the block and
+register tiled version of matrix matrix multiplication from the weekly
+assignment. 
 
-The loop unrolling and register tiling is performed by the \texttt{\#pragma
-unroll} on line 37, 57 and 68 of \autoref{cuda:kernel4a}.
+The loop unroll and jam, also known as register tiling, is intended by including
+the \texttt{\#pragma unroll} on line 37, 59 and 69 of \autoref{cuda:kernel4a}.
+As noted during the course, these pragmas are only hints to the optimizing
+compiler. The running time for a 50-runs benchmark goes from around 723.12 µs
+without pragmas to around 719.78 µs with pragmas. This does not seem
+significant, and may suggest that the compiler finds these optimization
+opportunities on its own.
+%LINUM
 
+
+%This is the version seen in \autoref{cuda:kernel4a}. 
 
 \begin{figure}[H]
     \centering
     \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4a.cu}
-    \caption{CUDA kernel for block and register tiled version of matrix matrix
+    \caption{CUDA kernel 4a for block and register tiled version of matrix matrix
     multiplication with filtering.}
     \label{cuda:kernel4a}
 \end{figure}
 
 
-\subsubsection{Kernel 4b:  Matrix-matrix multiplication}
+
+\subsubsection{Flipped approach}
+Assuming floating-point numbers work as commutative scalars, the transpose
+identity for these matrix products is given by:
+
+\[ (AB)^T = B^T A^T. \]
+
+By applying the identity on the above equation, we get what we have named the
+\enquote{ flipped } version:
+\[ \texttt{beta0} = YX^T \]
+
+This time we do not have to transpose \(Y\), potentially saving 1.3 ms, but we
+do need a transposed \(X\). However, this is already done for step 2 in order
+to calculating \(\texttt{Xsqr}
+= XX^T\).
+
+We have run a few experiments and a flipped test version can be found in
+\texttt{src/kernels/bfast\_step\_4a.cu}. However, this version is actually
+slower overall than the the register tiled version running on M1 despite running
+only a single kernel. This happens because because the kernel makes uncoalesced
+accesses to \(Y\) and because \(\text{beta0}^T\) of size \(\texttt{k2p2} \times
+\texttt{k2p2}\) has a neglible cost.
+
+However, further optimizations on the flipped version may be able yield some
+benefits.
+
+A last consideration from this approach is whether the remaining kernels need
+the transposed or untransposed versions of Y and \texttt{beta0}. If so it may
+make sense to \enquote{pay cost up front}.
+
+\subsubsection{Kernel 4b: Matrix-matrix multiplication}
+
+Kernel 4b translated from line 135 in \autoref{fut:kernel4} can be seen in
+\autoref{cuda:kernel4b}.
+
+A few experiments were conducted to try and improve temporal locality by copying
+\texttt{vec} into shared memory. The kernel running time benefits were
+diminishing going from 500.24 µs to 492.86 µs with shared memory, probably due
+to the small data size.
+
 
 \begin{figure}[H]
     \centering
-    \ecuda[firstline=131,lastline=164]{../src/kernels/bfast_others.cu}
-    \caption{CUDA kernel for calculating \texttt{beta}.}
+    \ecuda[firstline=135,lastline=164]{../src/kernels/bfast_others.cu}
+    \caption{CUDA kernel 4b for calculating \texttt{beta}.}
     \label{cuda:kernel4b}
 \end{figure}
 
 
-\subsubsection{Kernel 4c:  Matrix-matrix multiplication}
+\subsubsection{Kernel 4c: Matrix-matrix multiplication}
 
-\begin{figure}[H]
-    \centering
-    \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4c.cu}
-    \caption{CUDA kernel for block and register tiled version of matrix matrix multiplication.}
-    \label{cuda:kernel4c}
-\end{figure}
+Kernel 4c, accounting for line 137 in \autoref{fut:kernel4}, corresponds to
+another matrix matrix multiplication almost similar to \autoref{cuda:kernel4a}
+except for the simplificiation that the filtering on line 58 is not taking
+place. Thus, the same considerations apply here. The full code can be found in
+\texttt{src/bfast\_step\_4c.cu}.
+
+
+%\begin{figure}[H]
+%    \centering
+%    \ecuda[firstline=24,lastline=74]{../src/kernels/bfast_step_4c.cu}
+%    \caption{CUDA kernel for block and register tiled version of matrix matrix multiplication.}
+%    \label{cuda:kernel4c}
+%\end{figure}
 
 
 

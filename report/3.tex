@@ -1,6 +1,14 @@
-\section{
+\subsection{
     Step 3: Inverting \texorpdfstring{\(X\)}{X}
 }
+
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=123,lastline=124]{../src/fut-handout/bfast-distrib.fut}
+    \caption{The Futhark calling code for matrix inversion.}
+    \label{fut:kernel3}
+\end{figure}
+
 
 The kernel for matrix inversion is seen in \autoref{cuda:kernel3}. It is based
 on the Futhark function seen in \autoref{fut:kernel3} as well as the helper
@@ -24,24 +32,25 @@ We made the following four considerations during the CUDA convertion:
 \paragraph{Block size}
 We chose a block size of \(\texttt{k2p2} \times (2)\texttt{k2p2}\). This means
 we can load from global memory or assign a value from the identity matrix in one
-\texttt{if-else} statement. Please notice that the branches execute
-sequentially.
+\texttt{if-else} statement. Please note that the \texttt{if-else} branches do
+not execute in parallel.
 
 \paragraph{Shared memory}
 The result of the above is written into a location in shared memory, which is a
 form for scratchpad memory shared among all threads in the block, so we can
-access and manipulate it fast in the next step
+access and manipulate it with low latency in the next step. We did not find
+futher opportunities to improve temporal locality.
 
-\paragraph{Block size}
+\paragraph{Intra block synchronization}
 Since we have more sequential steps and these steps manipulate the same memory
 location, it is important to use the CUDA API call \texttt{\_\_syncthreads()}.
-This effectively creates synchronization point, where all warps wait on all
+This effectively creates a synchronization point, where all warps wait on all
 others in the block, making their view of the memory \textit{coherent}.
 
 \paragraph{Non-invertible matrices}
 Like the \texttt{bfast-distrib.fut}, we do not concern us self with the result
 of applying the algorithm on a non-invertible matrix. We are satisfied with
-preserving the semantics.
+preserving the semantics of the handed-out code.
 
 
 \begin{figure}[H]
@@ -54,17 +63,10 @@ preserving the semantics.
 
 \begin{figure}[H]
     \centering
-    \ehaskell[firstline=123,lastline=124]{../src/fut-handout/bfast-distrib.fut}
-    \caption{The Futhark calling code for matrix inversion.}
-    \label{fut:kernel3}
-\end{figure}
-
-
-\begin{figure}[H]
-    \centering
     \ehaskell[firstline=60,lastline=72]{../src/fut-handout/bfast-distrib.fut}
     \caption{The matrix inversion function that constructs the \([A|I]\) matrix
-    and returns the latter half upon completion of Gauss-Jordan elimination.}
+    and returns the latter half upon completion of Gauss-Jordan elimination in
+line 69.}
     \label{fut:matinv}
 \end{figure}
 

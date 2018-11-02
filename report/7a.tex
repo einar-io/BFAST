@@ -3,12 +3,13 @@
 }
 
 The moving sums first element is calculated in \autoref{fut:kernel7a}. We have
-translated it to CUDA in \autoref{cuda:kernel7a}. It is launched at 
-\autoref{cuda:kernel7a_run}.
+translated it to CUDA in \autoref{cuda:kernel7a}. 
+After the \texttt{scaninc\_block\_add\_nowrite<float>(errs)} on line 294, each
+thread hold the result in \texttt{val}. The last thread in the block, \(h-1\), has the sum of
+the whole array corresponding to a reduce.
 
-
-
-
+We specify the size of the
+shared memory as a launch parameter in \autoref{cuda:kernel7a_run}. 
 
 
 \begin{figure}[H]

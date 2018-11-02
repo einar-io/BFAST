@@ -1,6 +1,20 @@
 \subsection{
-    Step 8: Moving sums
+    Step 8: Calculating Breaks
 }
+
+Kernel 8 from \autoref{fut:kernel8} seen in \autoref{cuda:kernel8} produces the
+resulting array of vectors of \textsc{BFAST}. 
+Each vector contains the break values for each pixel in the monitor period.
+
+On line 46 we copy \texttt{BOUND} into shared memory. This gave us a small, but
+consistent, speedup from 1747.46 µs to 1743.30 µs possibly due to coalesced
+reads. %LINUM
+
+Line 5 keeps the return value of
+\texttt{scaninc\_block\_add\_nowrite<float>(MO\_shr)} in a register in order to
+decrease the amount of unneeded memory accesses.%
+%unneeded usage of memory bandwidth. %LINUM
+
 
 \begin{figure}[H]
     \centering
@@ -15,4 +29,27 @@
     \caption{CUDA kernel for calculating  \texttt{breakss}.}
     \label{cuda:kernel8}
 \end{figure}
+
+
+It seems intuitive that line 58---63 of \autoref{cuda:kernel8} %LINUM
+write either the value of \texttt{val} or \texttt{NAN} to the memory location in
+line 62. However, in order to do so, we must show that no index of \texttt{MO\_shr} 
+can occur twice and that no index is never written, and thus we conservatively follow the
+control flow of \autoref{fut:kernel8} and initially write \texttt{NAN} in every
+index of the array. 
+The impact was confirmed to be negligible due to the lockstep execution
+model of GPUs:
+ We created an experimental version called \texttt{bfast\_step\_8\_opt} and seen
+ in \autoref{cuda:kernel8alt} which also validates. However, the running time of
+ \texttt{bfast\_step\_8\_reuse} is 1745.06 µs compared to \texttt{bfast\_step\_8\_opt2} of
+ 1744.33 µs and thus we did not pursue to prove the former correct.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=181,lastline=186]{../src/kernels/bfast_step_8.cu}
+    \caption{Alternative control flow for kernel 8.}
+    \label{cuda:kernel8alt}
+\end{figure}
+
+
 
