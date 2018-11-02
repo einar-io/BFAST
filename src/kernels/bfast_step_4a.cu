@@ -54,10 +54,10 @@ __global__ void mmmult_regtiled_4a(float* A, float* B, float* C,
       } else {
         b = 0.0;
       }
-      bool is_number_b = !isnan(b); // hoisting
-      #pragma unroll
-      for (int i = 0; i < T; i++) {
-        if (is_number_b) {
+
+      if (!isnan(b)) {
+        #pragma unroll
+        for (int i = 0; i < T; i++) {
           cs[i] += b * Ash[i][k];
         }
       }
