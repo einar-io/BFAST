@@ -291,10 +291,10 @@ __global__ void bfast_step_7a(float *y_errors,
   errs[threadIdx.x] = y_error[threadIdx.x  + ns - h + 1];
   __syncthreads();
 
-  scaninc_block_add(errs);
+  float val = scaninc_block_add_nowrite<float>(errs);
 
-  if (threadIdx.x == 0) {
-    *MO_fst = errs[h-1];
+  if (threadIdx.x == h-1) {
+    *MO_fst = val;
   }
 }
 
