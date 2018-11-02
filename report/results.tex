@@ -1,19 +1,33 @@
 \section{Results}
 
+The final benchmark we were able to reach the timings seen in \autoref{tbl:results}.
+Please note this happened as an average over 500 runs in order to render the
+impact of a slow \enquote{warm-up run} neglible.
 
 \begin{figure}[H]
 \centering
-\begin{tabular}{ l l r l r }
-\textbf{Kernel} & \textbf{M1} & \textbf{M1 running time} & \textbf{M2} & \textbf{M2 running time} \\ \hline
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-                &             &                         &             & \\
-\end{tabular}
-\caption{Benchmark results for various optimizations.}
+                \begin{verbatim}
+                bfast-opt (all times are an average of 500 runs):
+
+                bfast_step_1_run             12.33 µs
+                transpose_X                  12.98 µs
+                transpose_Y                1228.31 µs
+                bfast_step_2_tiled_run     2684.10 µs
+                bfast_step_3_run           2610.31 µs
+                bfast_step_4a_tiled_run     711.29 µs
+                untranspose_beta0            78.09 µs
+                bfast_step_4b_run           501.39 µs
+                bfast_step_4c_tiled_run    1002.47 µs
+                bfast_step_5_run           2878.83 µs
+                bfast_step_6_reuse_run     2104.87 µs
+                bfast_step_7a_run           475.11 µs
+                bfast_step_7b_run            11.05 µs
+                bfast_step_8_opt2_run      1722.53 µs
+
+
+                Total runtime             16033.65 µs
+
+                \end{verbatim}
+\caption{Benchmark results averaged for 500 runs over the optimized kernels.}
 \label{tbl:results}
 \end{figure}

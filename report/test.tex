@@ -53,6 +53,9 @@ A brief overview of the contents of the \texttt{src} folder is as follows:
 \end{description}
 
 \subsection{Make targets}
+
+To build or run these targets go to the \texttt{src/} folder and issue \texttt{make
+<target>}.
 \begin{description}
 \item[\texttt{all}:] Compile BFAST
 \item[\texttt{debug}:] Compile BFAST with various debug options
@@ -71,7 +74,8 @@ Generate datasets for testing.
 Must be executed once before running the \texttt{test} or
 \texttt{test-memcheck} targets.
 \end{description}
-The test-related targets may take some time to execute.
+
+The test and dataset related targets may take some time to execute.
 
 
 \subsection{Regarding the declaration of BFAST algorithms}
