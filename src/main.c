@@ -26,8 +26,9 @@ extern void bfast_step_6_reuse_test(struct bfast_run_config *);
 extern void bfast_step_7a_test(struct bfast_run_config *);
 extern void bfast_step_7b_test(struct bfast_run_config *);
 extern void bfast_step_8_test(struct bfast_run_config *);
-extern void bfast_step_8_opt_test(struct bfast_run_config *);
+extern void bfast_step_8_reuse_test(struct bfast_run_config *);
 extern void bfast_step_8_opt2_test(struct bfast_run_config *);
+extern void bfast_step_8_less_shr_test(struct bfast_run_config *);
 extern void bfast_naive(struct bfast_run_config *);
 extern void bfast_opt(struct bfast_run_config *cfg);
 extern void bfast_opt_alt(struct bfast_run_config *cfg);
@@ -61,8 +62,9 @@ int run_entry(const char *entry, struct bfast_run_config *cfg)
     {         "bfast-7a",         bfast_step_7a_test },
     {         "bfast-7b",         bfast_step_7b_test },
     {          "bfast-8",          bfast_step_8_test },
-    {      "bfast-8-opt",      bfast_step_8_opt_test },
+    {    "bfast-8-reuse",    bfast_step_8_reuse_test },
     {     "bfast-8-opt2",     bfast_step_8_opt2_test },
+    { "bfast-8-less-shr", bfast_step_8_less_shr_test },
     // Full BFAST runs
     {      "bfast-naive",                bfast_naive },
     {        "bfast-opt",                  bfast_opt },
