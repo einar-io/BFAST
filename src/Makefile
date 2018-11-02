@@ -22,8 +22,14 @@ test-memcheck: all
 benchmark: all
 	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-opt -i 1 -r 50 2>&1 >/dev/null
 
+benchmark-alt: all
+	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-opt-alt -i 1 -r 50 2>&1 >/dev/null
+
 benchmark-naive: all
 	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-naive -i 1 -r 50 2>&1 >/dev/null
+
+datasets:
+	fut/generate-datasets.sh
 
 clean:
 	rm -f bfast main.o values.o

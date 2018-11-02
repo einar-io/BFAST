@@ -1,0 +1,52 @@
+\subsection{
+  Helper kernel: Inclusive block scan with addition
+}
+
+Scan is an operator that is often used in parallel programming.
+For our BFAST implementation, we only need to be able to perform scans within
+thread blocks, meaning on arrays of maximum size 1024.
+Additionally, we will only be performing inclusive scans with the
+\texttt{(+)}-operator.
+
+The scan implementation used for this project can be found in
+\texttt{src/kernels/bfast\_helpers.cu.h}.
+The implementation consists of three functions.
+The functionality of each of these three is as follows:
+\begin{description}
+\item[\texttt{scaninc\_warp\_add}]
+This function applies an inclusive scan with the \texttt{(+)}-operator to each
+slice of 32 contiguous elements of an input array.
+This is done by utilizing warp-synchronicity -- the fact that threads in a warp
+execute instructions in an SIMD fashion, so no synchronization is needed.
+\item[\texttt{scaninc\_block\_add\_nowrite}]
+This function performs the full block-level scan on its input array.
+In brief, this done by:
+\begin{enumerate}
+\item
+  Applying \texttt{scaninc\_warp\_add} to scan each slice of 32 contiguous
+  elements of the input array.
+\item
+  Scanning using \texttt{scaninc\_warp\_add} over a temporary array containing
+  the last element of every 32 element long slice.
+  This temporary array will not be longer than 32.
+\item
+  "Distributing" the result of the scan on the temporary array to the remaining
+  elements in the array. %% XXX: "see slides for details"? Lab2_presentation.pdf last slide
+\end{enumerate}
+It is worth noting that this function does not write the scanned array to the
+input buffer, but instead, the return value for any thread with index \(k\) is
+the element with index \(k\) in the result array.
+This feature is why the name of the function ends with \texttt{nowrite}, and it
+is useful for when the scan is being used as a reduce, meaning all values
+except the last can be disregarded, or when a map needs to be applied to the
+result array immediately after the scan returns. % XXX: skær ud i pap at det her er godt fordi færre hukommelsestilgange?
+It is, however, unlikely that using this function in these use cases will have
+a significant positive performance impact, since all scans should be done in
+shared memory, and accessing this kind of memory is almost as fast as accessing
+registers.
+\item[\texttt{scaninc\_block\_add}]
+This function is a simple wrapper around \texttt{scaninc\_block\_add\_nowrite},
+which writes the return values to the input array.
+\end{description}
+
+

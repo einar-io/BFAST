@@ -1,2 +1,88 @@
 \section{Testing and code structure}
+In this section, we briefly explain the structure and some of the design
+choices in our source code.
+The goal of this section is to make the source code easier to navigate for the
+reader, and to briefly explain how to run benchmarks, perform tests, and
+generate test datasets.
+
+The handed-in zip file contains two folders, \texttt{data} and \texttt{src}.
+A brief overview of the contents of the \texttt{src} folder is as follows:
+\begin{description}
+\item[\texttt{main.c}:]
+  Entry point for BFAST and parsing of command line options.
+\item[\texttt{bfast\_util.cu}, \texttt{bfast\_util.cu.h}, and \texttt{bfast.h}:]
+  Utilities for executing full BFAST runs, and for creating and running tests
+  for individual components of the BFAST algorithm.
+\item[\texttt{kernels/} directory:]
+  Kernels for executing BFAST, wrapper host functions for invoking them with
+  the correct grid and block sizes, test declarations for every kernel.
+\item[\texttt{bfast.cu}:]
+  Functions for executing full BFAST runs.
+  A full BFAST run is declared as an array of \texttt{struct bfast\_step},
+  which is passed to a utility function from \texttt{bfast\_util.cu} that will
+  execute the specified kernels.
+\item[\texttt{timer.h}:]
+  Utility functions for measuring runtimes.
+\item[\texttt{panic.h}:]
+  From the Futhark repository, ISC license.
+  Contains helper functions for panicking and formatting messages.
+  Minor BFAST-related changes made.
+\item[\texttt{values.c} and \texttt{values.h}:]
+  From the Futhark repository, ISC license.
+  Contains a parser for binary and string formatted Futhark values.
+\item[\texttt{memcheck-runner.sh}:]
+  Wrapper script for calling the \texttt{bfast} executable.
+  Used with the \texttt{test-memcheck} make target.
+\item[\texttt{Makefile}:]
+  Makefile used for building bfast, running tests and benchmarks, and
+  generating datasets.
+\item[\texttt{fut/} directory:]
+  Contains \texttt{bfast-kernels.fut}, another Futhark version of the BFAST
+  algorithm, in which each step of the algorithm is put into its own entry
+  point.
+  This file also contains functions for generating test datasets.
+  Also contains \texttt{generate-datasets.sh}, a shell script for compiling and
+  executing the \texttt{bfast-kernels.fut} program to generate test datasets.
+\item[\texttt{fut-handout/} directory:]
+  Handed out implementations of BFAST.
+\item[\texttt{tests/} directory:]
+  Contains \texttt{tests.fut}, an empty Futhark program only containing test
+  cases.
+  These test cases are run on our compiled CUDA implementation of BFAST by
+  giving special parameters to the Futhark test program, \texttt{futhark-test}.
+\end{description}
+
+\subsection{Make targets}
+\begin{description}
+\item[\texttt{all}:] Compile BFAST
+\item[\texttt{debug}:] Compile BFAST with various debug options
+\item[\texttt{test}:] Test the CUDA implementation using \texttt{futhark-test}.
+\item[\texttt{test-memcheck}:]
+Test the CUDA implementation using \texttt{futhark-test} while checking for
+out-of-bounds memory accesses with \texttt{cuda-memcheck}.
+\item[\texttt{benchmark}:]
+Benchmark the \texttt{bfast-opt} variant of the full BFAST algorithm.
+\item[\texttt{bennchmark-alt}:]
+Benchmark the \texttt{bfast-opt-alt} variant of the full BFAST algorithm.
+\item[\texttt{benchmark-naive}:]
+Benchmark the \texttt{bfast-naive} variant of the full BFAST algorithm.
+\item[\texttt{datasets}:]
+Generate datasets for testing.
+Must be executed once before running the \texttt{test} or
+\texttt{test-memcheck} targets.
+\end{description}
+The test-related targets may take some time to execute.
+
+
+\subsection{Regarding the declaration of BFAST algorithms}
+In \texttt{src/bfast.cu}, as already mentioned, several variants of full BFAST
+runs are defined using arrays of \texttt{struct bfast\_step}.
+Each \texttt{struct bfast\_step} denotes an action that should be taken: either
+a call to a specified kernel, or a transpose, or an \textit{untranspose}.
+Clearly, it does not make sense to talk about an untranpose operation
+mathematically, since the transpose operation is its own inverse, but in our
+case, the implementation details of \texttt{struct bfast\_state} and related
+structs and functions make it necessary to distinguish between, for example,
+going from \(Y\) to \(Y^T\) and going from \(Y^T\) to \(Y\).
+
 
