@@ -105,12 +105,11 @@ BFAST_END_TEST
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-// Optimized (XXX: how?) implementation
+// Optimized shared memory usage implementation
 //
-// XXX: Concisely describe how it is optimized, possibly give the kernel a
-// better name. see bfast_step_2/bfast_step_6/bfast_step_4c
+// Uses 2 shared memory arrays instead of 3.
 
-__global__ void bfast_step_8_opt(float *y_errors,  // [m][N]
+__global__ void bfast_step_8_reuse(float *y_errors,  // [m][N]
                                int *val_indss, // [m][N]
                                int *Nss,       // [m]
                                int *nss,       // [m]
@@ -143,19 +142,11 @@ __global__ void bfast_step_8_opt(float *y_errors,  // [m][N]
   float *breaks   = &breakss  [blockIdx.x * (N-n)];
   float val;
 
-
   __shared__ float BOUND_shr[1024];
 
   if (threadIdx.x < N) {
     BOUND_shr[threadIdx.x] = BOUND[threadIdx.x];
   }
-
-
-  //__shared__ int val_inds_shr[1024];
-
-  //if (threadIdx.x < N) {
-  //  val_inds_shr[threadIdx.x] = val_inds[threadIdx.x];
-  //}
 
   __shared__ float MO_shr[1024];
   {
@@ -170,8 +161,6 @@ __global__ void bfast_step_8_opt(float *y_errors,  // [m][N]
   {
     // MO'
     __syncthreads();
-    //MO_shr[threadIdx.x] = fdividef( MO_shr[threadIdx.x] , sigma * __fsqrt_rd( (float)ns ));
-    //MO_shr[threadIdx.x] = fdividef( MO_shr[threadIdx.x] , sigma ) * rsqrtf( (float)ns );
     MO_shr[threadIdx.x] /= sigma * sqrtf( (float)ns );
   }
 
@@ -188,13 +177,9 @@ __global__ void bfast_step_8_opt(float *y_errors,  // [m][N]
     // Make sure all threads have read into `val` before overwriting source.
     __syncthreads();
     MO_shr[val_inds[threadIdx.x + ns] - n] = val;
-    //int idx = val_inds[threadIdx.x + ns] - n;
-    //if ( 0 <= idx && idx < 1024 ){
-    //  MO_shr[idx] = val;
-    //}
   }
 
-  // Here might be a producer/consumer dependency in MO_shr.
+  // Here is a producer/consumer dependency in MO_shr.
 
   {
     // breaks = ..
@@ -208,7 +193,7 @@ __global__ void bfast_step_8_opt(float *y_errors,  // [m][N]
 
 }
 
-void bfast_step_8_opt_run(struct bfast_state *s)
+void bfast_step_8_reuse_run(struct bfast_state *s)
 {
   float *d_y_errors = fget_dev(s,y_errors);
   int *d_val_indss = iget_dev(s,val_indss);
@@ -220,12 +205,12 @@ void bfast_step_8_opt_run(struct bfast_state *s)
 
   dim3 grid(m, 1, 1);
   dim3 block(N-n, 1, 1);
-  bfast_step_8_opt<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
+  bfast_step_8_reuse<<<grid, block>>>(d_y_errors, d_val_indss, d_Nss, d_nss,
                                     d_sigmas, d_MO_fsts, d_BOUND, h, n, N,
                                     d_breakss);
 }
 
-BFAST_BEGIN_TEST(bfast_step_8_opt_test)
+BFAST_BEGIN_TEST(bfast_step_8_reuse_test)
   BFAST_BEGIN_INPUTS
   {
     BFAST_VALUE_y_errors, BFAST_VALUE_val_indss, BFAST_VALUE_Nss,
@@ -233,7 +218,7 @@ BFAST_BEGIN_TEST(bfast_step_8_opt_test)
   }
   BFAST_END_INPUTS
   BFAST_BEGIN_OUTPUTS { BFAST_VALUE_breakss } BFAST_END_OUTPUTS
-  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_8_opt_run) } BFAST_END_STEPS
+  BFAST_BEGIN_STEPS { BFAST_STEP(bfast_step_8_reuse_run) } BFAST_END_STEPS
 BFAST_END_TEST
 
 ////////////////////////////////////////////////////////////////////////////////
