@@ -1,0 +1,23 @@
+\subsection{
+  Step 5: Calculating \texttt{Nss}, \texttt{y\_errors}, \texttt{val\_indss}
+}
+% XXX: about fused and dsitrub and such. Cosmin: ``you have to talk about why
+% it is distributed the way it is''
+This step corresponds to the following Futhark code:
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=153,lastline=162]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Futhark code for calculating \texttt{Nss}, \texttt{y\_errors}, \texttt{val\_indss}.}
+    \label{fut:kernel5}
+\end{figure}
+
+Where the \texttt{partitionCos} function is defined as follows
+\begin{figure}[H]
+    \centering
+    \ehaskell[firstline=10,lastline=27]{../src/fut-handout/bfast-distrib.fut}
+    \caption{Implementation of \texttt{partitionCos}}
+    \label{fut:partitionCos}
+\end{figure}
+
+
+
