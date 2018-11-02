@@ -1,4 +1,4 @@
-\subsection*{Kernel 4}
+\subsection{Step 4: Matrix Matrix Multiplications}
 
 We have chosen to split step 4 seen in \autoref{fut:kernel4} into 3 different
 kernels, which we will investigate in the following three subsections.
@@ -10,7 +10,7 @@ kernels, which we will investigate in the following three subsections.
     \label{fut:kernel4}
 \end{figure}
 
-\subsection{Kernel 4a: Matrix-matrix multiplication}
+\subsubsection{Kernel 4a: Matrix-matrix multiplication}
 
 Line 133 in the Futhark code in \autoref{fut:kernel4} corresponds to a matrix
 matrix multiplication with an additional filtering. 
@@ -86,7 +86,7 @@ opportunities on its own.
 
 
 
-\subsubsection{Flipped approach}
+\paragraph{Flipped approach}
 Assuming floating-point numbers work as commutative scalars, the transpose
 identity for these matrix products is given by:
 

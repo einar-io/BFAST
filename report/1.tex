@@ -15,14 +15,17 @@ The first CUDA kernel in \autoref{cuda:kernel1} is concerned with line 103---104
 in the Furthark code, seen in \autoref{fut:kernel1} and defined in \autoref{fut:mkX},
 which generates the elements in the matrix \(X\) corresponding to \(X\) on line
 1 in \cite[Algorithm 1, \textsc{BFAST}, p. 3]{bfast}.
+
 The remainder of \autoref{fut:kernel1} is handled differently in CUDA. Instead of
 defining a new variable to hold an initiating range of existing values, we pass a
 the index, at which the subrange ends. This allows for less copying of data.
 
-Looking further at \autoref{cuda:kernel1}, we see that the output matrix is
-passed in as a pointer in the formal parameters. This is allows for the
-orchestrating code to do the allocation and better reuse device allocated memory
-between kernels.
+Looking further at \autoref{cuda:kernel1}, we see that the kernel does not
+return any values, i.e. it is type \texttt{void}, so the output matrix is
+written to the location passed in trough a pointer in the formal parameters.
+
+%This is allows for the orchestrating code to do the allocation and better reuse
+%device allocated memory between kernels.
 
 In line 29 and 31 we use CUDA's intrinsic trignometric functions which,
 according to NVIDIA:
@@ -34,10 +37,10 @@ Calculate the fast approximate sine of the input argument.
 
 Benchmarks of \texttt{kernel1} show that the intrinsic functions result in a
 running time of around 14-16 ms which is the same as using the standard
-\texttt{sinf} and \texttt{cosf} functions. This confirms our understanding that
-that the intrinsic functions are substituted for the standard ones by the
-compiler.  It seems like reasonable approach to use them where possible and we
-can safely do so, because we know that our code still validates.
+\texttt{sinf} and \texttt{cosf} functions. This is in line with our
+understanding that that the intrinsic functions are substituted for the standard
+ones by the compiler. It seems like a reasonable approach to use them where
+possible and we can safely do so, because we know that our code still validates.
 
 \begin{figure}[H]
     \centering
