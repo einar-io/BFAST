@@ -126,7 +126,8 @@ int main(int argc, const char **argv)
   }
 
   if (entry == NULL) {
-    fprintf(stderr, "Usage: %s -e ENTRY [-o OUTFILE]\n", argv[0]);
+    fprintf(stderr, "Usage: %s -e ENTRY [-o OUTFILE] [-i <0|1>] [-r RUNS]\n",
+            argv[0]);
     fprintf(stderr, "  OUTFILE defaults to OUTPUT\n");
     return 1;
   }
