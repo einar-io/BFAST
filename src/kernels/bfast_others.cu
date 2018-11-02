@@ -223,9 +223,9 @@ __global__ void bfast_step_5(float *Y, float *y_preds, int *Nss,
   if (!isnan(err)) {
     idx = num_valids[threadIdx.x] - 1;
   } else {
-    float num_invalids = threadIdx.x - (num_valids[threadIdx.x] - 1);
-    idx = num_invalids - 1 + i;
-    //idx = threadIdx.x - num_valids[threadIdx.x] + i;
+    //float num_invalids = threadIdx.x - num_valids[threadIdx.x] + 1;
+    //idx = num_invalids + i - 1;
+    idx = threadIdx.x - num_valids[threadIdx.x] + i;
   }
 
   y_error[idx] = err;

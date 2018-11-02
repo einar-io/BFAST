@@ -1,3 +1,4 @@
+\newpage
 \subsection{
   Step 5: Calculating \texttt{Nss}, \texttt{y\_errors}, \texttt{val\_indss}
 }
@@ -17,6 +18,127 @@ Where the \texttt{partitionCos} function is defined as follows
     \ehaskell[firstline=10,lastline=27]{../src/fut-handout/bfast-distrib.fut}
     \caption{Implementation of \texttt{partitionCos}}
     \label{fut:partitionCos}
+\end{figure}
+These functions are translated to a single CUDA kernel seen in
+\autoref{cuda:kernel5}.
+
+Looking at the Futhark code in \autoref{fut:kernel5}, we see that \texttt{map2}
+maps over the \texttt{images} and \texttt{y\_preds} arrays, which both have
+\texttt{m} as their outermost dimensions.
+Looking at the \texttt{map2} body, we see that we apply a number of parallel
+operators to various arrays of length \texttt{N}.
+Based on this, we choose our grid dimensions to be \texttt{(m,1,1)} and our
+block dimensions to be \texttt{(N,1,1)}.
+
+In the translated CUDA kernel in \autoref{cuda:kernel5}, we first, on lines
+206-210, abstract away the grid dimension by defining variables that point to
+the specific inputs and outputs belonging to a block. % LINUM
+
+The first chunk of code to translate in the \texttt{map2} body in the Futhark
+code is the \texttt{map} that calculates the \texttt{y\_error\_all} array.
+This translation is trivial, and the resulting CUDA code is on lines 212-213 in
+\autoref{cuda:kernel5}. % LINUM
+We do not write the resulting array to any memory location -- shared or global
+-- since it is not yet necessary to do so.
+In general, when translating to CUDA kernels, we try to keep values stored in
+registers for as long as possible, until, for example, threads need to access
+values calculated in other threads (as when scanning), or until a value has to
+be written to global memory to be read as an output from the computation.
+
+\subsubsection{Partition}
+After calculating \texttt{y\_error\_all}, the Futhark code semantically
+performs a partition on this array, such that in the resulting array,
+\texttt{y\_error}, non-\texttt{NaN} are placed first.
+This array has length \(N\).
+Additionally, an array \texttt{val\_inds} of the same length is produced, for
+which it holds that \texttt{y\_error\_all[val\_inds[i]] == y\_error[i]} for all
+\(i\in [0;N[\).
+Lastly, the scalar \texttt{Ns} is produced, which contains the number of
+non-\texttt{NaN} elements in \texttt{y\_error\_all}.
+
+In the Futhark code, these semantics are implemented by partioning an array of
+2-tuples, in which every tuple contains an element from \texttt{y\_error\_all}
+and its index.
+In the translated code, however, we do not need to explicitly bundle up each
+element of \texttt{y\_error\_all} with its index, since we already have access
+to the index through the \texttt{threadIdx.x} variable.
+
+Another important implementation difference between the Futhark code and the
+translated CUDA code is that, in the implementation of the partition operator
+(\texttt{partitionCos}), the Futhark code applies two \texttt{scan}s, while the
+translated code only performs a single \texttt{scan}.
+This is possible because it holds that \texttt{isF0[i] == i - isT[i] + 1} for
+all \(\mathtt{i}\in [0;N[\).
+
+The following is an overview of how the partitioning is implemented in the CUDA
+kernel:
+\begin{description}
+  \item[lines 216---217:] % LINUM
+    As in \texttt{partitionCos}, the first step is to apply the predicate to
+    every element of the input array, \texttt{y\_error\_all}.
+    We recall that a thread with id \(k\) contains the element from index
+    \(k\) of \texttt{y\_error\_all} in the variable \texttt{err}.
+    We recall that the predicate is \texttt{1} if the input element is
+    non-\texttt{NaN} and \texttt{0} otherwise.
+    The array resulting from applying the predicate, \texttt{num\_valids}, is
+    stored in shared memory, since we will have to perform a \texttt{scan} on
+    it.
+    At this point, the name of the array variable is not descriptive of its
+    contents, and its values are the same as those of the \texttt{tfs} variable
+    in \texttt{partitionCos}.
+
+  \item[lines 218--220:] % LINUM
+    To ensure that all threads of all warps have written their values to
+    \texttt{num\_invalids} before scanning, \texttt{\_\_syncthreads()} is
+    called.
+    Then, an inclusive scan with addition is performed on the array.
+    After this scan returns, the name of the array variable,
+    \texttt{num\_valids}, is descriptive of its contents, i.e., the element at
+    index \(x\) is the number of valid (non-\texttt{NaN}) elements in the slice
+    \texttt{y\_error\_all[:x]}.
+    At this point, the values stored in \texttt{num\_valids} are the same as
+    those in \texttt{isT} in \texttt{partitionCos}.
+    The variable \texttt{i} is initialized to be the total number of valid
+    elements in the array, as in \texttt{partitionCos}.
+    This is also the value of the output variable \texttt{Ns}.
+
+  \item[lines 222---229:] % LINUM
+    These lines correspond to lines 21---25 in \texttt{partitionCos}.
+    The next step is for each thread to calculate the index in the result array
+    to which it needs to write its element from \texttt{y\_error\_all}.
+    This index is stored in the variable \texttt{idx}, and we will refer to
+    it as the destination index.
+
+    For a thread with id \(k\), if its element passes the predicate, the
+    destination index is \texttt{num\_valids[k]-1}.
+
+    If its element does not pass the predicate, the destination index
+    calculation is slightly more complicated.
+    In terms of the Futhark code, if element \(k\) does not pass the predicate,
+    it is written to index \texttt{isF0[k]+i-1}.
+
+    In the CUDA code, however, we do not explicitly have this array, but we
+    know that \texttt{isF0[k] == k - isT[k] + 1} holds.
+    Using this, we see that we can calculate the destination index as
+    \texttt{k - isT[k] + i} (line 228). % LINUM
+
+  \item[lines 231---235:] % LINUM
+    These lines correspond to lines 26---27 in \texttt{partitionCos}.
+    Considering again a thread with id \(k\), since it now knows the
+    destination index of its value from \texttt{y\_error\_all}, it simply
+    writes this value to the destination index of the output array,
+    \texttt{y\_error}.
+    Since the thread has the element at index \(k\) from
+    \texttt{y\_error\_all}, \(k\) is be written to the destination index of the
+    \texttt{val\_inds} array.
+    Lastly, \texttt{Ns} is set to the value of \texttt{i}.
+\end{description}
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=198,lastline=236]{../src/kernels/bfast_others.cu}
+    \caption{The translated CUDA kernel.}
+    \label{cuda:kernel5}
 \end{figure}
 
 
