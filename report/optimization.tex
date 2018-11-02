@@ -3,6 +3,62 @@
 
 \section{Translation and optimization}
 
+\subsection{Code layout}
+
+\subsubsection{Guards} In the beginning of each kernel we include a guard, i.e.
+an early \texttt{return} statement, as an sanity check. A simple example can be
+seen \autoref{cuda:guards}.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=204,lastline=204]{../src/kernels/bfast_others.cu}
+    \caption{Guard to provide an early exit if thread index is larger than expected.}
+    \label{cuda:guards}
+\end{figure}
+
+Ideally no threads should be spawned just to return immediately. However, this
+does happen for some kernels, for example when the block size does not divide
+the size of the dataset, and the last block has more threads than work.
+
+\subsubsection{Dynamic block sizes}
+While not an optimization per se, using dynamically calculated values
+instead of statically \enquote{worst-case} values for block sizes, provided
+a significant reduction in running time from around 36 ms to 24 ms. 
+
+%This alone reduced the running time of the  baseline translation found in
+%\texttt{src/bfast-naive.cu} from 50-70 ms to around 26 ms.
+
+
+\subsubsection{Row-major order and macros}
+
+The matrices are dense and stored in a row-major order. This means that all
+elements of row \(n\) is stored before elements of row \(n+1\). Naturally all
+elements within a row is stored in the order of the their corresponding column.
+
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=19,lastline=20]{../src/bfast_util.cu.h}
+    \caption{Macros}
+    \label{cuda:macros}
+\end{figure}
+
+The two macros in \autoref{cuda:macros} are used throughout the code base to
+ease understanding the intention of the resulting calculations.
+
+\begin{description}
+
+    \item[\texttt{IDX\_2D(i,j,columns)}] is used to calculate the
+        offset into a two-dimentional array when only the starting address is
+        passed. This is typically the case for passing a pointer to an array of
+        arrays in C-like languages such as CUDA.
+
+    \item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
+        \(\ceil*{x/y}\) without using floating-point arithmetic assuming both
+        \(x, y \in \mathbb{N}^{+} \).
+
+\end{description}
+
 
 
 \include*{transpose} % Jakob

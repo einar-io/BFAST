@@ -5,78 +5,32 @@
 
 \subsection{The \textsc{BFAST} algorithm}
 \subsubsection{The \textsc{BFAST} article}
-The project is based on the algorithm described in \cite{bfast}. More precise it
-is an adaption of the implementation written in Futhark and handed out as
-\texttt{bfast-distrib.fut}.
+The project is based on the algorithm described in \cite{bfast}.
+More precisely it is a translation of the implementation written in Futhark and
+handed out as \texttt{bfast-distrib.fut}.
 
 \subsubsection{Purpose of \textsc{BFAST}}
-The algorithm produces an array of values for each pixel in an image time
-series. The values magnitude describes the change in its color value. The algorithm accounts
-for seasonal trends. High values in the output represents abrupt changes and are
-called \enquote{breaks}.
-Furthermore the algrithm must take into account the presence of \texttt{NaN}
-values in datasets.
+The algorithm takes as input, among other things, \texttt{m} time series of
+length \texttt{N}.
+Out of the \texttt{N} entries in each time series, there is a historic period
+of length \texttt{n}, based on which predictions are made for the the remainder
+of the period (of length \texttt{N-n}).
+This period is called the monitor period.
 
-We will not concern us with further interpretation, as the focus is on
-semantics-preserving code optimizations and their impact on running time.
+The output of the algorithm is an array of length \texttt{N-n}, in which the
+value of each element indicates the extent to which the predictions for the
+monitor period deviate from the observed values of the monitor period.
+High values in the output represent unexpected changes and are called
+\enquote{breaks}.
 
-\subsection{Code layout}
+The algorithm accounts for seasonal trends in the time series, and it takes
+into account the precense of \texttt{NaN} values in the input datasets.
+in datasets.
 
-\subsubsection{Guards} In the beginning of each kernel we include a guard, i.e.
-an early \texttt{return} statement, as an sanity check. A simple example can be
-seen \autoref{cuda:guards}.
+We will not be concerning ourselves with further interpretation of the
+semantics, as the focus of this project is on semantics-preserving code
+optimizations and their impact on runtime.
 
-\begin{figure}[H]
-    \centering
-    \ecuda[firstline=204,lastline=204]{../src/kernels/bfast_others.cu}
-    \caption{Guard to provide an early exit if thread index is larger than expected.}
-    \label{cuda:guards}
-\end{figure}
-
-Ideally no threads should be spawned just to return immediately. However, this
-does happen for some kernels, for example when the block size does not divide
-the size of the dataset, and the last block has more threads than work.
-
-\subsubsection{Dynamic block sizes}
-While not an optimization per se, using dynamically calculated values
-instead of statically \enquote{worst-case} values for block sizes, provided
-a significant reduction in running time from around 36 ms to 24 ms. 
-
-%This alone reduced the running time of the  baseline translation found in
-%\texttt{src/bfast-naive.cu} from 50-70 ms to around 26 ms.
-
-
-\subsubsection{Row-major order and macros}
-
-The matrices are dense and stored in a row-major order. This means that all
-elements of row \(n\) is stored before elements of row \(n+1\). Naturally all
-elements within a row is stored in the order of the their corresponding column.
-
-
-\begin{figure}[H]
-    \centering
-    \ecuda[firstline=19,lastline=20]{../src/bfast_util.cu.h}
-    \caption{Macros}
-    \label{cuda:macros}
-\end{figure}
-
-The two macros in \autoref{cuda:macros} are used throughout the code base to
-ease understanding the intention of the resulting calculations.
-
-\begin{description}
-
-    \item[\texttt{IDX\_2D(i,j,columns)}] is used to calculate the
-        offset into a two-dimentional array when only the starting address is
-        passed. This is typically the case for passing a pointer to an array of
-        arrays in C-like languages such as CUDA.
-
-    \item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
-        \(\ceil*{x/y}\) without using floating-point arithmetic assuming both
-        \(x, y \in \mathbb{N}^{+} \).
-
-\end{description}
-
-    
 
 \subsubsection{Dataset and variables}
 
@@ -90,9 +44,9 @@ describing the dataset input and output are listed in \autoref{tbl:scalars}.
     \textbf{Variable} & \textbf{Interpretation}              & \textbf{Lower bound} & \textbf{\texttt{sahara} dataset} & \textbf{Upper bound} \\ \hline
         n                & length of historical period & 1           & 228                     & N-1 \\
         N                & length of full period       &             & 414                     & 1024   \\
-        N-n              & length of monitor period    &             & 186                     & \\
-        k                &                             &             & 3                       & \\
-        k2p2             & \(k\times2 + 2\)            &             & 8                       & \\
+        N-n              & length of monitor period    &             & 186                     & 1024 \\
+        k                &                             &             & 3                       & 3 \\
+        k2p2             & \(k\times2 + 2\)            &             & 8                       & 8 \\
         frec             & images per                  &             & 12.0                    & \\
         m                & number of pixels            &             & 67968                   & \\
         hfrac            &                             &             & 0.25                    & \\
@@ -112,13 +66,8 @@ The following machines have been used for benchmarking:
   \item[Machine 1 (M1): ]
     \texttt{gpu03-diku-apl.science.ku.dk}, GPU: GeForce GTX 780 Ti, CPU: Intel Xeon E5-2650 v2
   \item[Machine 2 (M2): ]
-    my desktop PC, GPU: GeForce GTX 970, CPU: Intel Core i7-4790K
+    Jakob's desktop PC, GPU: GeForce GTX 970, CPU: Intel Core i7-4790K
 \end{description}
 
 Unless stated otherwise we run our benchmarks on Machine 1.
-
-
-
-
-
 
