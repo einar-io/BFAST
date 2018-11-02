@@ -1,0 +1,47 @@
+\subsection{
+  Helper kernel: Matrix transposition
+}
+
+Matrix transposition is a basic tool in ensuring coalesced memory
+access.
+The usefulness of transposing a matrix in order to have coalesced access,
+however, relies on the transposition kernel itself being optimized for
+coalesced access.
+
+A naive implementation included -- but not used -- in our BFAST code can be
+seen in \autoref{cuda:transpose-naive}.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=9,lastline=18]{../src/kernels/bfast_helpers.cu.h}
+    \caption{Naive matrix transposition}
+    \label{cuda:transpose-naive}
+\end{figure}
+
+It can easily be seen that while the read from \texttt{A} is coalesced, the
+write to \texttt{B} is not.
+To solve this, a tile of shared memory is used for each block, into which a
+chunk of the input matrix is read from global memory in a coalesced fashion.
+Once this is done, the threads of a block can access the elements in this tile
+in a certain uncoalesced fashion, such that the write to the output matrix can
+also be coalesced.
+This increases overall performance, since shared memory is much faster than
+global memory, meaning that there is significantly less penalty in accessing
+elements in shared memory in an uncoalesced fashion.
+The tiled transposition kernel can be seen in \autoref{cuda:transpose-tiled}.
+
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=35,lastline=58]{../src/kernels/bfast_helpers.cu.h}
+    \caption{Tiled matrix transposition}
+    \label{cuda:transpose-tiled}
+\end{figure}
+A tile size of 32 is used. This is the same as the size of a warp.
+
+We specifically see that each warp reads 32 neighboring elements from a row in
+the input matrix, resulting in a coalesced memory access.
+These 32 bytes are then saved as a row in the shared memory buffer.
+Next, we let each warp read a colum from the shared memory buffer.
+Since this column then has to be stored as a row in the output matrix,
+this write will also be coalesced.
+
