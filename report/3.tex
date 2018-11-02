@@ -32,8 +32,9 @@ We made the following four considerations during the CUDA convertion:
 \paragraph{Block size}
 We chose a block size of \(\texttt{k2p2} \times (2)\texttt{k2p2}\). This means
 we can load from global memory or assign a value from the identity matrix in one
-\texttt{if-else} statement. Please note that the \texttt{if-else} branches do
-not execute in parallel.
+\texttt{if-else} statement.
+% Please note that the \texttt{if-else} branches do
+% not execute in parallel.
 
 \paragraph{Shared memory}
 The result of the above is written into a location in shared memory, which is a
@@ -48,9 +49,9 @@ This effectively creates a synchronization point, where all warps wait on all
 others in the block, making their view of the memory \textit{coherent}.
 
 \paragraph{Non-invertible matrices}
-Like the \texttt{bfast-distrib.fut}, we do not concern us self with the result
-of applying the algorithm on a non-invertible matrix. We are satisfied with
-preserving the semantics of the handed-out code.
+Like the \texttt{bfast-distrib.fut}, we do not concern ourselves with the
+result of applying the algorithm on a non-invertible matrix. We are satisfied
+with preserving the semantics of the handed-out code.
 
 
 \begin{figure}[H]

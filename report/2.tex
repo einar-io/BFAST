@@ -350,10 +350,54 @@ The CUDA kernel with all these optimizations applied can be seen in
 
 \begin{figure}[H]
     \centering
-    \ecuda[firstline=98,lastline=144]{../src/kernels/bfast_step_2.cu}
+    \ecuda[firstline=97,lastline=143]{../src/kernels/bfast_step_2.cu}
     \caption{CUDA kernel for calculating \texttt{Xsqr}.}
     \label{cuda:kernel2}
 \end{figure}
+
+\subsubsection{Runtimes}
+Hoisted: 18107.22 us \newline
+Shared memory: 5832.03 us \newline
+Transposed Y: 2887.64 us \newline
+
+\subsubsection{Note}
+A CUDA kernel for the pseudocode in \autoref{fig:2-shared} also exists --
+\texttt{bfast\_step\_2\_shr} in \texttt{src/kernels/bfast\_step\_2.cu}.
+This verison is kept around because on M2, it does not pay off to transpose Y
+for coalesced access in this step, and in step 4a.
+
+
+%commit 10244068798a7f3dfa6c8bb4371cf71e8fafcc6e
+%Author: Jakob Stokholm Bertelsen <jstokh@gmail.com>
+%Date:   Wed Oct 24 00:17:05 2018 +0200
+%
+%    bfast_step_2 optimization: Transpose Y for coalesced memory access.
+%
+%    bfast_step_2 took    3936.32 us
+%
+%commit 35e298440f81fcff950ec2f8b38e1eae79bb72c6
+%Author: Jakob Stokholm Bertelsen <jstokh@gmail.com>
+%Date:   Tue Oct 23 22:12:28 2018 +0200
+%
+%    bfast_step_2 optimization: Use shared memory for Yh slice
+%
+%    bfast_step_2 took    5832.03 us
+%
+%
+%commit 8827e8e62f5638f2f88a197fdeaa7f62f595123f
+%Author: Jakob Stokholm Bertelsen <jstokh@gmail.com>
+%Date:   Tue Oct 23 21:52:02 2018 +0200
+%
+%    bfast_step_2 optimization: Rewrite to use tiling (HOIST)
+%
+%    bfast_step_2 took   18107.22 us
+%    or, if it suits you better
+%    bfast_step_2 took   20040.31 us
+
+
+
+
+
 
 % Useful link regarding coalesced access:
 % https://devblogs.nvidia.com/how-access-global-memory-efficiently-cuda-c-kernels/

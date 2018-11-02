@@ -13,8 +13,9 @@
 
 The first CUDA kernel in \autoref{cuda:kernel1} is concerned with line 103---104
 in the Furthark code, seen in \autoref{fut:kernel1} and defined in \autoref{fut:mkX},
-which generates the elements in the matrix \(X\) corresponding to \(X\) on line
-1 in \cite[Algorithm 1, \textsc{BFAST}, p. 3]{bfast}.
+which generates the elements in the matrix \(X\).
+% corresponding to \(X\) on line
+% 1 in \cite[Algorithm 1, \textsc{BFAST}, p. 3]{bfast}.
 The remainder of \autoref{fut:kernel1} is handled differently in CUDA. Instead of
 defining a new variable to hold an initiating range of existing values, we pass a
 the index, at which the subrange ends. This allows for less copying of data.
