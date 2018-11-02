@@ -12,29 +12,43 @@ This step corresponds to the following Futhark code:
 %dimensions of \(X^T\) are \texttt{[N][k2p2]}.
 
 The \texttt{matmul\_filt} function, as it is used here, calculates the product
-of the two input matrices \(Xh\) and \(Xh^T\), while additionally taking a
-filtering vector of length \(n\) as input, corresponding to a row from \(Yh\).
-In this vector, the value of its \(k\)th element determines whether the product
-\(Xh_{ik}Xh^T_{kj}\) is to be excluded from the summation
-\(\sum\limits_{a=0}^{n-1} Xh_{ia}Xh^T_{aj}\) when calculating some element
-at row \(i\), column \(j\) in the output matrix.
-% XXX: The semantics could be written in a cooler fashion by writing the
-% summation over products X_{bla}X^T_{bla2}*f_k where f_k is 0 when kth elem in
-% filt vector is NAN and 1 otherwise
-Since \(Xh\) has dimensions \texttt{[k2p2][n]}, the output matrix from each call
+of the two input matrices \texttt{Xh} (denoted \(X_h\)) and \texttt{Xth}
+(denoted \(X^T_h\)), while additionally taking a filtering vector of length
+\(n\) as input, corresponding to a row from \texttt{Yh}.
+Specifically, the following calculation is made:
+
+\[
+  \sum\limits_{k=0}^{n-1} X_h[i,k]\cdot X_h^T[k,j]\cdot f_k
+\]
+
+where
+\[
+  f_k =
+  \begin{cases}
+    0 & \mbox{ if } y_k \mbox{ is \texttt{NaN}} \\
+    1 & \mbox{ otherwise }
+  \end{cases}
+\]
+and \(y\) is the filtering vector -- a row from \texttt{Yh}.
+
+Since \(X_h\) has dimensions \texttt{[k2p2][n]}, the output matrix from each call
 to \texttt{matmul\_filt} will have dimensions \texttt{[k2p2][k2p2]}.
 Since we perform this calculation for every one of the \(m\) rows in \(Y\), the
 output, \(Xsqr\), has shape \texttt{[m][k2p2][k2p2]}.
 
-These semantics can naively be replicated in a CUDA-kernel with grid size \(m\)
-and block size \( (k2p2, k2p2)\), in which the \(k\)th block performs one
-matrix-matrix multplication with row \(k\) from \(Y\) as its filtering vector,
-and each thread in a block is responsible for calculating one element in the
-output matrix.
+The semantics of this step can naively be replicated in a CUDA-kernel with grid
+size \texttt{(m,1,1)} and block size \texttt{(k2p2, k2p2, 1)}, in which the
+\(k\)th block performs one matrix-matrix multplication with row \(k\) from
+\(Y_h\) as its filtering vector, and each thread in a block is responsible for
+calculating one element in the output matrix.
 This naive approach is implemented in the \texttt{bfast\_step\_2} kernel in
 \texttt{kernels/bfast\_step\_2.cu}.
 
-C-like pseudocode for how this kernel works can be seen below:
+C-like pseudocode for how this kernel works can be seen in
+\autoref{fig:2-naive}.
+
+\begin{figure}[H]
+  \centering
 \begin{minted}{c}
 for (int i = 0; i < m; i++) {           // blockIdx.x
   for (int y = 0; y < k2p2; y++) {      // threadIdx.y
@@ -50,65 +64,52 @@ for (int i = 0; i < m; i++) {           // blockIdx.x
   }
 }
 \end{minted}
-% corollary 2, safe to interchange inwards
-
+\caption{Naive implementation}
+\label{fig:2-naive}
+\end{figure}
 We observe that there is great opportunity for optimizing locality, since we
-have many global memory accesses to the same elements of both \(X\), \(Xth\)
-and \(Yh\).
+have many global memory accesses to the same elements of both \texttt{Xh},
+\texttt{Xth} and \texttt{Yh}. % XXX
 To carry out this optimization, we will apply the tiling technique, which
 involves stripmining relevant loops and interchanging them inwards.
 
 The first step is to stripmine the outermost loop with a tile size \texttt{T},
-as seen below:
-\begin{minted}[linenos]{c}
-for (int i = 0; i < m; i += T) {          // blockIdx.x
-  for (int ii = 0; ii < T; ii++) {        // stripmined loop
-    for (int y = 0; y < k2p2; y++) {      // threadIdx.y
-      for (int x = 0; x < k2p2; x++) {    // threadIdx.x
-        float accum = 0.0;
-        for (int l = 0; l < n; l++) {     // sequential
-          if (!isnan(Yh[i+ii,l])) {
-            accum += Xh[y,l] * Xth[l,x];
-          }
-        }
-        Xsqr[i+ii, y, x] = accum;
-      }
-    }
-  }
-}
-\end{minted}
+as seen in \autoref{fig:2-stripmine}.
+
 This transformation is always safe to apply. When the optimization is done, a
 suitable value of \texttt{T} can be found that best optimizes performance.
 
 The next step is to interchange the stripmined loop inwards.
-To show that this is a valid transformation, we must show that the interchange
-does not cause any direction vector to become invalid.
-In the code above, we can easily see that there is only one dependency, which
-is the one that arises from reading from and writing to the variable
-\texttt{accum}.
-Since we only read from \texttt{Yh}, \texttt{Xh}, and \texttt{Xth}, the
-statements involving these arrays do not cause dependencies to arise.
-We can also easily see that the write to \texttt{Xsqr} does not cause a WAW
-dependency to arise, since every iteration writes to a new index of this array.
-Looking at the \texttt{accum}-dependency arising from the increment in the
-statement on line 8, we see that this is a dependency with direction \texttt{<}
-in the innermost loop, since we read the value that was written in the previous
-iteration.
-Since \texttt{accum} is private to the second-most inner loop, the direction is
-\texttt{=} for all loops but the innermost.
-Thus, since the dependency has direction vector \texttt{[=,=,=,=,<]}, we see
-that it is impossible for us to cause this direction vector to become invalid,
-and we are free to interchange the loops as we wish, as per theorem 7 in
-\cite{pmph}.
+To show that this is a valid transformation, we first observe that the outer
+four loops are perfectly nested and parallel.
+The observation that these loops are parallel can easily be made by noting
+\begin{enumerate*}[label=(\alph*)]
+\item
+  that \texttt{accum} is private to the fourth loop and thus cannot cause
+  inter-iteration dependencies to arise,
+\item
+  that all accesses to \texttt{Yh}, \texttt{Xh}, and \texttt{Xth} are reads and
+  thus cannot cause dependencies to arise, and lastly
+\item
+  that there can be no output (WAW) dependencies arising from the write to
+  \texttt{Xsqr}, since every iteration writes to a new element.
+  % XXX: maybe add how this can be seen?
+\end{enumerate*}
+Having made these observations, we can now, by \cite[corollary 2]{pmph},
+interchange the stripmined loop inwards.
+This can be seen in \autoref{fig:2-interchange}.
 
-Interchanging the stripmined loop inwards gives us:
+\begin{figure}[H]
+\centering
+\begin{subfigure}{.55\textwidth}
+  \centering
 \begin{minted}[linenos]{c}
-for (int i = 0; i < m; i += T) {          // blockIdx.x
-  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
-    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
-      for (int ii = 0; ii < T; ii++) {
+for (int i = 0; i < m; i += T) {
+  for (int ii = 0; ii < T; ii++) {
+    for (int y = 0; y < k2p2; y++) {
+      for (int x = 0; x < k2p2; x++) {
         float accum = 0.0;
-        for (int l = 0; l < n; l++) {     // sequential
+        for (int l = 0; l < n; l++) {
           if (!isnan(Yh[i+ii,l])) {
             accum += Xh[y,l] * Xth[l,x];
           }
@@ -119,26 +120,62 @@ for (int i = 0; i < m; i += T) {          // blockIdx.x
   }
 }
 \end{minted}
+  \caption{Stripmined}
+  \label{fig:2-stripmine}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+\begin{minted}[linenos]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      for (int ii = 0; ii < T; ii++) {
+        float accum = 0.0;
+        for (int l = 0; l < n; l++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum += Xh[y,l] * Xth[l,x];
+          }
+        }
+        Xsqr[i+ii, y, x] = accum;
+      }
+    }
+  }
+}
+\end{minted}
+  \caption{Stripmined loop interchanged inwards}
+  \label{fig:2-interchange}
+\end{subfigure}
+\caption{Stripmining and interchanging inwards}
+\label{fig:2-opt-1-badname}
+\end{figure}
 
 Next, we wish to distribute the stripmined loop across the contents of its
 body.
-Consider the dependency graph for the body of the stripmined loop, as sketched
-on \ref{fig:step-2-graph}.
-We see that each of the three nodes makes up its own strongly connected
-component, and it is thus, by theorem 9 (\cite{pmph}), legal to distribute the
-loop.
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.4\textwidth]{step-2-graph.jpg}
-    \caption{Dependency graph for the contents of the \texttt{ii}-loop}\label{fig:step-2-graph}
-\end{figure}
+Since the outer four loops are parallel, we are allowed to perform this
+transformation, as stated by \cite[corollary 3]{pmph}.
 Since \texttt{accum} is declared inside the loop we are distributing, we
 must perform array expansion on this variable.
-The result of the loop distribution can be seen below:
+The result of the loop distribution with array expansion of \texttt{accum} can
+be seen in \autoref{fig:2-distrib}.
+
+%We observe that the \texttt{accum}-dependency on line 11 now has direction
+%vector \texttt{[=,=,=,<,=]}.
+%We can thus interchange the \texttt{l}-loop on line 9 with the surrounding
+%\texttt{ii}-loop on line 8, and we get the following:
+% XXX WRITE ME
+By observing that the \texttt{ii}-loop on line 8 in \autoref{fig:2-distrib}
+is parallel, we can, by \cite[corollary 2]{pmph}, interchange this with the
+\texttt{l}-loop on line 9.
+The result of this is shown in \autoref{fig:2-interchange-again}.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{.55\textwidth}
+  \centering
 \begin{minted}[linenos]{c}
-for (int i = 0; i < m; i += T) {        // blockIdx.x
-  for (int y = 0; y < k2p2; y++) {      // threadIdx.y
-    for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
       float accum[T];
       for (int ii = 0; ii < T; ii++) {
         accum[ii] = 0.0;
@@ -157,15 +194,15 @@ for (int i = 0; i < m; i += T) {        // blockIdx.x
   }
 }
 \end{minted}
-
-We observe that the \texttt{accum}-dependency on line 11 now has direction
-vector \texttt{[=,=,=,<,=]}.
-We can thus interchange the \texttt{l}-loop on line 9 with the surrounding
-\texttt{ii}-loop on line 8, and we get the following:
+  \caption{Distributing the stripmined loop}
+  \label{fig:2-distrib}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
 \begin{minted}[linenos]{c}
-for (int i = 0; i < m; i += T) {        // blockIdx.x
-  for (int y = 0; y < k2p2; y++) {      // threadIdx.y
-    for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
       float accum[T];
       for (int ii = 0; ii < T; ii++) {
         accum[ii] = 0.0;
@@ -184,19 +221,174 @@ for (int i = 0; i < m; i += T) {        // blockIdx.x
   }
 }
 \end{minted}
+  \caption{Interchanging the stripmined loop}
+  \label{fig:2-interchange-again}
+\end{subfigure}
+\caption{Distributing the stripmined loop and interchanging inwards again.}
+\label{fig:2-opt-2-badname}
+\end{figure}
+
+We are now ready to reap the benefits of applying these transformations.
+The first thing we notice is that the multiplication
+\texttt{Xh[y,l] * Xth[l,x]} has become invariant to the \texttt{ii}-loop on on
+line 9 in \autoref{fig:2-interchange-again}.
+This means we can hoist this multiplication to a private variable in the
+surrounding loop, as seen in \autoref{fig:2-hoist}.
+% XXX: Describe the impact of this optimization
+
+We recall from the naive version that the outermost loop denotes the
+1-dimensional grid, the second-most outer loop denotes the y-coordinate of the
+block, and the third-most outer loop denotes the x-coordinte of the block.
+We observe that the access \texttt{Y[i+ii,l]} on line 11 in
+\autoref{fig:2-hoist} is invariant to the block dimensions.
+This means that when executing the \texttt{ii}-loop on line 10, every thread
+within a block will issue exactly \texttt{T} reads to the same \texttt{T}
+elements from global memory. This is bad!
+We can instead, prior to executing the loop on line 10, read these \texttt{T}
+elements from global memory into shared memory, which can be done using
+\texttt{T} threads from a block -- each of them issuing one read to global
+memory and saving the result to an element of the shared memory buffer.
+% XXX: Describe impact. Ie., technically reduces memory accesses by factor
+% k2p2**2, but in reality probably less since each warp has their memory
+% requests serviced in parallel. Also possible that several warps in a block
+% can have their requests serviced together, but unsure of whether or not this
+% actaully happens.
+The result of this can be seen in \autoref{fig:2-shared}.
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{.55\textwidth}
+  \centering
+  % NB! stripnl=false for padding
+  \begin{minted}[linenos,stripnl=false]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {
+        float val = Xh[y,l] * Xth[l,x];
+        for (int ii = 0; ii < T; ii++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
 
 
+\end{minted}
+% NB! Don't remove blank lines near the end of the above minted environment
+  \caption{Hoisting the multplication}
+  \label{fig:2-hoist}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+\begin{minted}[linenos]{c}
+for (int i = 0; i < m; i += T) {    //grid.x
+  for (int y = 0; y < k2p2; y++) {  //block.y
+    for (int x = 0; x < k2p2; x++) {//block.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {
+        float val = Xh[y,l] * Xth[l,x];
+        __shared__ float Ysh[T];
+        // Copy slice Yh[i:i+T, l] into Ysh
+        for (int ii = 0; ii < T; ii++) {
+          if (!isnan(Ysh[ii])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+\end{minted}
+\caption{Read slice of \(Y\) into shared memory}
+  \label{fig:2-shared}
+\end{subfigure}
+\caption{Hoisting and using shared memory}
+\label{fig:2-opt-3-badname}
+\end{figure}
 
+% We observe that when we read into Ysh, we are accessing the elements of Ysh
+% in an uncoalesced fashion, i.e., column-wise.
+% To fix this, we take Yth, Yh transposed, as input instead of Yh, to make the
+% acess in the l-loop row-wise and thus coalesced.
+We can now make the key observation that when we read into shared memory, we
+are accessing the elements of \texttt{Yh} from global memory in an uncoalesced
+fashion.
+Specifically, since we are reading a column of length \texttt{T}, i.e., the
+slice \texttt{Yh[i:i+T,l]}, and since matrices are stored in row-major form in
+memory, these elements will be accessed with a stride of the same length as the
+number of columns in the matrix.
+In our implementation, this number of columns is \(N\) (and not \(n\), since
+\texttt{Yh} points to the same memory as \texttt{Y}).
 
+By first transposing \texttt{Yh} (the transposed version is named
+\texttt{Yth}), however, the slice that will be read into shared memory will
+instead become \texttt{Yth[l, i:i+T]}, which reduces the stride to exactly 1,
+since the elements being read are within the same row.
+By grouping our accesses in this manner, the GPU can coalesce the accesses to
+global memory into fewer memory transactions, resulting in less time spent
+waiting for memory to be read.
 
+The CUDA kernel with all these optimizations applied can be seen in
+\autoref{cuda:kernel2}.
 
+\begin{figure}[H]
+    \centering
+    \ecuda[firstline=98,lastline=144]{../src/kernels/bfast_step_2.cu}
+    \caption{CUDA kernel for calculating \texttt{Xsqr}.}
+    \label{cuda:kernel2}
+\end{figure}
 
+% Useful link regarding coalesced access:
+% https://devblogs.nvidia.com/how-access-global-memory-efficiently-cuda-c-kernels/
+% Specifically, this text:
+%   ``Grouping of threads into warps is not only relevant to computation, but also
+%     to global memory accesses. The device coalesces global memory loads and
+%     stores issued by threads of a warp into as few transactions as possible
+%     to minimize DRAM bandwidth''
 
-
-
-
-
-
+% Eh, waste of space
+%\begin{minted}[linenos]{c}
+%for (int i = 0; i < m; i += T) {          // blockIdx.x
+%  for (int y = 0; y < k2p2; y++) {        // threadIdx.y
+%    for (int x = 0; x < k2p2; x++) {      // threadIdx.x
+%      float accum[T];
+%      for (int ii = 0; ii < T; ii++) {    // sequential
+%        accum[ii] = 0.0;
+%      }
+%      for (int l = 0; l < n; l++) {       // sequential
+%        float val = Xh[y,l] * Xth[l,x];
+%        __shared__ float Ysh[T];
+%        // Copy slice Yth[l, i:i+T] into Ysh
+%        for (int ii = 0; ii < T; ii++) {  // sequential
+%          if (!isnan(Ysh[ii])) {
+%            accum[ii] += val;
+%          }
+%        }
+%      }
+%      for (int ii = 0; ii < T; ii++) {    // sequential
+%        Xsqr[i+ii, y, x] = accum[ii];
+%      }
+%    }
+%  }
+%}
+%\end{minted}
 
 
 
