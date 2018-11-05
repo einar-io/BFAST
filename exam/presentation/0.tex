@@ -1,0 +1,125 @@
+
+\begin{frame}{Standpunkt}
+    \textit{ \enquote{
+            Human understanding, rationality, and judgement exceed any
+            conceivable system of fixed rules or any computational system [..]
+            %, however.
+    }}
+-- Peter Asaro~\citep[p. 700]{asaro}
+
+
+
+\end{frame}
+
+\begin{frame}{Church-Turing-tesen}
+    \textit{ \enquote{
+            We may compare a man in the process of computing a real number to a
+            machine.
+    }}
+
+    \tiny --
+    Slide 3 fra forelæsning 2
+    
+\end{frame}
+
+%\begin{frame}{Church-Turing Tesen}
+%    \textit{ \enquote{
+%            Any computation that can be carried out by mechanical means can be
+%            performed by some Turing machine.
+%    }}
+%
+%    \tiny --
+%    \url{https://people.csail.mit.edu/devadas/6.004/Lectures/lect13/sld011.htm}
+%    
+%\end{frame}
+
+\section{Definitioner og introduktion}
+
+\begin{frame}[fragile]{Definition: Autonomi}
+
+    Autonome våbensystemer er ikke nødvendigvis \textit{intelligente}:
+    %Autonome våbensystemer
+    %, jævnfør:
+
+    \pause
+
+    \begin{minted}{c}
+    while(true) {
+        shoot();
+    }
+    \end{minted}
+
+\end{frame}
+
+\begin{frame}{Definition: Våben vs. våbensystem}
+
+    \begin{tabular}{ r | l }
+        \hline
+        Våben & Individuelt instrument \\
+        Våbensystem & Forbundet gruppe af våben o.l.\\
+        \hline  
+    \end{tabular}
+\end{frame}
+
+
+
+\begin{frame}{US Air Forces Kill Chain}
+
+    %tikz magic
+    \begin{figure}[H]
+    \centering
+\begin{tikzpicture}[thick,scale=0.8, every node/.style={scale=0.8}]
+  \fill[even odd rule,red!30] circle (3.8) circle (3.2);
+  \arcarrow{3}{3.5}{4}{0+20}{0+70}{5}{white,
+      draw = red!50!black, very thick}{Find}
+  \arcarrow{3}{3.5}{4}{60+20}{60+70}{5}{white,
+      draw = red!50!black, very thick}{Fix}
+  \arcarrow{3}{3.5}{4}{120+20}{120+70}{5}{white,
+      draw = red!50!black, very thick}{Track}
+  \arcarrow{3}{3.5}{4}{180+20}{180+70}{5}{white,
+      draw = red!50!black, very thick}{Target}
+  \arcarrow{3}{3.5}{4}{240+20}{240+70}{5}{white,
+      draw = red!50!black, very thick}{Engage}
+  \arcarrow{3}{3.5}{4}{300+20}{300+70}{5}{white,
+      draw = red!50!black, very thick}{Assess}
+\end{tikzpicture}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Autonomi i Kill Chain}
+
+    %tikz magic
+    \begin{figure}[H]
+    \centering
+\begin{tikzpicture}[thick,scale=0.8, every node/.style={scale=0.8}]
+  \fill[even odd rule,red!30] circle (3.8) circle (3.2);
+  \arcarrow{3}{3.5}{4}{0+20}{0+70}{5}{white,
+      draw = red!50!black, very thick}{Find}
+  \arcarrow{3}{3.5}{4}{60+20}{60+70}{5}{white,
+      draw = red!50!black, very thick}{Fix}
+  \arcarrow{3}{3.5}{4}{120+20}{120+70}{5}{white,
+      draw = red!50!black, very thick}{Track}
+  \arcarrow{3}{3.5}{4}{180+20}{180+70}{5}{red,
+      draw = red!50!black, very thick}{Target}
+  \arcarrow{3}{3.5}{4}{240+20}{240+70}{5}{red,
+      draw = red!50!black, very thick}{Engage}
+  \arcarrow{3}{3.5}{4}{300+20}{300+70}{5}{white,
+      draw = red!50!black, very thick}{Assess}
+\end{tikzpicture}
+\end{figure}
+
+
+\end{frame}
+\begin{frame}{Argumentationspositioner}
+
+    \begin{tabular}{ r | l }
+        \hline
+        in-the-loop & conventional weapon systems \\
+        on-the-loop & seemingly middle ground\tiny \citep[s. 695, afsnit 1]{asaro} \\
+        out-of-the-loop & autonomous weapon systems \\
+        \hline  
+    \end{tabular}
+
+
+\end{frame}
+

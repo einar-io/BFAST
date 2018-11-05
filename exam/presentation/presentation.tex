@@ -1,0 +1,38 @@
+\documentclass{beamer}
+\usepackage{newclude}
+\usepackage[outputdir=build]{minted}
+\usepackage[backend=biber,natbib,
+style=authoryear]{biblatex}
+\addbibresource{diku.bib}
+\defbibheading{bibliography}[\refname]{}
+\usepackage{csquotes}
+\usetheme{metropolis}           % Use metropolis theme
+\usepackage{hyperref}
+\input{killchain}
+
+\title{\textsc{BFAST}}
+\subtitle{Breaks For Additive Season and Trend}
+\date{Wednesday, 2018-11-07}
+\author{Jakob Bertelsen Stokholm \& Einar Rasmussen}
+\institute{DIKU}
+\begin{document}
+  \maketitle
+  %\include*{0} % introduction
+  %\include*{1}
+  %\include*{2}
+  %\include*{3}
+  % \include*{4} % Extras: while(true) kill(); Håndsoprækning, etc
+  %\begin{frame}[allowframebreaks]{Kildeliste} // Hvis pagebreaks er nødvendige
+
+  \begin{frame}{Kildeliste}
+
+     \renewcommand*{\bibfont}{\scriptsize} \printbibliography
+
+  \end{frame}
+
+  \begin{frame}{Tak for jeres opmærksomhed}
+
+      Tak for i dag :)
+
+  \end{frame}
+\end{document}
