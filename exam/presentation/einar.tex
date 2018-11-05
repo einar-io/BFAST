@@ -1,0 +1,78 @@
+\section{\texttt{bfast\_step\_5}} % Einar
+
+% Et af de argumenter, der bruges til at støtte udviklingen af autonome
+% våbensystemer, påpeger at autonome våbensystemer vil være i stand til at undgå
+% nogle af de fejl, mennesker begår, og derfor vil autonome våbensystemer på
+% sigt være med til at nedbringe antallet af civile ofre i krig. Beskriv Peter
+% Asaros holdning til argumentet og diskuter, om I selv finder argumentet
+% holdbart.
+
+\begin{frame}[fragile]{Futhark}
+
+%  -- Cosmin's tip for this bit: Assume N < 1024
+%
+%  ---------------------------------------------
+%  -- 5. filter etc.                          --
+%  ---------------------------------------------
+%  -- Nss:        Nss[i] where 0<=i<m is the number of valid (non-NaN) entries
+%  --             for time series i
+%  -- y_errors:   y_errors[i] where 0<=i<m is an array of error values for time
+%  --             series i, partitioned such that valid (non-NaN) entries come
+%  --             before invalid (NaN) entries.
+%  -- vald_indss: vald_indss[i] where 0<=i<m is an array of indices indicating
+%  --             the original positions of the elements in y_errors[i], i.e.,
+%  --             before partitioning.
+\begin{minted}{haskell}
+let (Nss, y_errors, val_indss) =
+unsafe ( intrinsics.opaque <| unzip3 <|
+  map2 (\y y_pred ->
+    let y_error_all = zip y y_pred |>
+      map (\(ye,yep) -> if !(f32.isnan ye) 
+                        then ye-yep 
+                        else f32.nan )
+    let (tups, Ns) = zip2 y_error_all (iota N) |>
+      partitionCos (\(ye,_) -> !(f32.isnan ye)) (0.0, 0)
+    let (y_error, val_inds) = unzip tups
+    in  (Ns, y_error, val_inds)
+      ) images y_preds )
+\end{minted}
+
+\end{frame}
+
+\begin{frame}[fragile]{CUDA}
+
+\begin{minted}{haskell}
+__global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
+    float *sigmas, int n, int N, int k2p2)
+{
+  // Grid dimensions (x, y, z): (m, 1, 1)
+  // Block dimensions (x, y, z ): (n, 1, 1)
+
+  if (threadIdx.x >= n) { return; }
+
+  float *yh = &Yh[blockIdx.x * N]; // Yh is Y, so N cols in memory
+  float *y_error = &y_errors[blockIdx.x * N];
+
+  __shared__ int num_valids[1024];
+  num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
+  __syncthreads();
+  scaninc_block_add<int>(num_valids);
+  int ns = num_valids[n - 1];
+  __syncthreads(); // necessary because shared memory is reused
+
+  float *sigma_shared = (float *) num_valids;
+  float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
+  val = val * val;
+  sigma_shared[threadIdx.x] = val;
+  __syncthreads();
+  scaninc_block_add<float>(sigma_shared);
+
+  if (threadIdx.x == 0) {
+    sigmas[blockIdx.x] =
+      __fsqrt_rd(sigma_shared[n - 1] / ((float)(ns - k2p2)));
+    nss[blockIdx.x] = ns;
+  }
+}
+\end{minted}
+
+  \end{frame}
