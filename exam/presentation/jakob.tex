@@ -1,0 +1,266 @@
+
+
+\section{Tiling in step 2}
+
+\begin{frame}[fragile]{Futhark code and semantics}
+\begin{minted}{haskell}
+  let Xsqr = intrinsics.opaque <|
+             map (matmul_filt Xh Xth) Yh
+\end{minted}
+\texttt{matmul\_filt}: Matrix-matrix multiplication with filtering vector.
+Specifically:
+\[
+  C[i,j]=\sum\limits_{k=0}^{n-1} A[i,k]\cdot B[k,j]\cdot f_k
+\]
+and
+\[
+  f_k =
+  \begin{cases}
+    0 & \mbox{ if } y[k] \mbox{ is \texttt{NaN}} \\
+    1 & \mbox{ otherwise }
+  \end{cases}
+\]
+where \(y\) is a row from \texttt{Yh}, \(A\) is \texttt{Xh}, \(B\) is
+\texttt{Xth}, and \(C\) is a matrix in \texttt{Xsqr}.
+%XXX: Mention dimensions?
+\end{frame}
+
+\begin{frame}[fragile]{How can this be implemented?}
+  Naively:
+\begin{minted}[linenos,fontsize=\scriptsize]{c}
+for (int i = 0; i < m; i++) {           // blockIdx.x
+  for (int y = 0; y < k2p2; y++) {      // threadIdx.y
+    for (int x = 0; x < k2p2; x++) {    // threadIdx.x
+      float accum = 0.0;
+      for (int l = 0; l < n; l++) {     // sequential
+        if (!isnan(Yh[i,l])) {
+          accum += Xh[y,l] * Xth[l,x];
+        }
+      }
+      Xsqr[i, y, x] = accum;
+    }
+  }
+}
+\end{minted}
+Many accesses to same elements of \texttt{Xh} and \texttt{Xth} (global memory).
+Solution: Tiling.
+\end{frame}
+
+\begin{frame}[fragile]{Applying tiling transformations}
+
+\begin{minipage}{.55\textwidth}
+\begin{minted}[linenos,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {
+  for (int ii = 0; ii < T; ii++) {
+    for (int y = 0; y < k2p2; y++) {
+      for (int x = 0; x < k2p2; x++) {
+        float accum = 0.0;
+        for (int l = 0; l < n; l++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum += Xh[y,l] * Xth[l,x];
+          }
+        }
+        Xsqr[i+ii, y, x] = accum;
+      }
+    }
+  }
+}
+\end{minted}
+\begin{center}
+  Stripmine
+\end{center}
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+  \centering
+  \begin{minted}[linenos,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      for (int ii = 0; ii < T; ii++) {
+        float accum = 0.0;
+        for (int l = 0; l < n; l++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum += Xh[y,l] * Xth[l,x];
+          }
+        }
+        Xsqr[i+ii, y, x] = accum;
+      }
+    }
+  }
+}
+\end{minted}
+\begin{center}
+  Interchange
+\end{center}
+\end{minipage}
+\end{frame}
+
+\begin{frame}[fragile]{Applying tiling transformations}
+\begin{minipage}{.55\textwidth}
+\begin{minted}[linenos,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int ii = 0; ii < T; ii++) {
+        for (int l = 0; l < n; l++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] +=
+              Xh[y,l] * Xth[l,x];
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+\end{minted}
+\begin{center}
+  Distribute loop
+\end{center}
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+  \centering
+  \begin{minted}[linenos,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {
+        for (int ii = 0; ii < T; ii++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] +=
+              Xh[y,l] * Xth[l,x];
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+\end{minted}
+\begin{center}
+  Interchange again
+\end{center}
+\end{minipage}
+\end{frame}
+
+\begin{frame}[fragile]{Reaping the benefits}
+\begin{minipage}{.55\textwidth}
+  \centering
+\begin{center}
+  Hoist multiplication
+\end{center}
+  % NB! stripnl=false for padding
+\begin{minted}[linenos,stripnl=false,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {
+  for (int y = 0; y < k2p2; y++) {
+    for (int x = 0; x < k2p2; x++) {
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {
+        float val = Xh[y,l] * Xth[l,x];
+        for (int ii = 0; ii < T; ii++) {
+          if (!isnan(Yh[i+ii,l])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+
+
+\end{minted}
+% NB! Don't remove blank lines near the end of the above minted environment
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+  \centering
+\begin{center}
+  Utilize shared memory
+\end{center}
+\begin{minted}[linenos,fontsize=\tiny]{c}
+for (int i = 0; i < m; i += T) {    //grid.x
+  for (int y = 0; y < k2p2; y++) {  //block.y
+    for (int x = 0; x < k2p2; x++) {//block.x
+      float accum[T];
+      for (int ii = 0; ii < T; ii++) {
+        accum[ii] = 0.0;
+      }
+      for (int l = 0; l < n; l++) {
+        float val = Xh[y,l] * Xth[l,x];
+        __shared__ float Ysh[T];
+        // Copy slice Yh[i:i+T, l] into Ysh
+        for (int ii = 0; ii < T; ii++) {
+          if (!isnan(Ysh[ii])) {
+            accum[ii] += val;
+          }
+        }
+      }
+      for (int ii = 0; ii < T; ii++) {
+        Xsqr[i+ii, y, x] = accum[ii];
+      }
+    }
+  }
+}
+\end{minted}
+\end{minipage}
+\end{frame}
+
+\begin{frame}[fragile]{Coalesced access and CUDA}
+\begin{minted}[linenos,fontsize=\tiny]{c}
+__global__ void bfast_step_2_tiled(float *Xh, float *Xth, float *Yth,
+    float *Xsqr, int N, int n, int k2p2, int m)
+{
+  if (threadIdx.y >= k2p2 || threadIdx.x >= k2p2) { return; }
+  float accum[STEP_2_TILE_SIZE];
+  __shared__ float ysh[STEP_2_TILE_SIZE];
+  for (int t = 0; t < STEP_2_TILE_SIZE; t++) { accum[t] = 0.0; }
+  for (int i = 0; i < n; i++) {
+    float val = Xh[IDX_2D(threadIdx.y, i, N)] * Xth[IDX_2D(i, threadIdx.x, k2p2)];
+    int ysh_idx = IDX_2D(threadIdx.y, threadIdx.x, k2p2);
+    if (ysh_idx < STEP_2_TILE_SIZE) {
+      int y_row = blockIdx.x * STEP_2_TILE_SIZE + ysh_idx;
+      if (y_row < m) { ysh[ysh_idx] = Yth[IDX_2D(i, y_row, N)]; }
+      else { ysh[ysh_idx] = 0.0; }
+    }
+    __syncthreads();
+    for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
+      if (!isnan(ysh[t])) { accum[t] += val; }
+  } }
+  for (int t = 0; t < STEP_2_TILE_SIZE; t++) {
+    int mat_idx = blockIdx.x * STEP_2_TILE_SIZE + t;
+    if (mat_idx < m) {
+      Xsqr[mat_idx * k2p2 * k2p2 + IDX_2D(threadIdx.y, threadIdx.x, k2p2)] = accum[t];
+} } }
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{Runtimes}
+\begin{itemize}
+  \item  \textbf{naive:} 24072 \textmu s
+  \item  \textbf{hoisted:} 18107 \textmu s, \textasciitilde 1.3x speedup from naive
+  \item  \textbf{shared memory:} 5832 \textmu s, \textasciitilde 4.1x speedup from naive
+  \item  \textbf{coalesced access:} 2684 \textmu s, \textasciitilde 9x speedup from naive
+\end{itemize}
+\end{frame}
+
+\section{Tiling in step 4}
+
+\section{Performance portability and the cost of transposition}
+
