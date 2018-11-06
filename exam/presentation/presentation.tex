@@ -1,17 +1,22 @@
 \documentclass{beamer}
 \usepackage{newclude}
 \usepackage[outputdir=build]{minted}
+\usemintedstyle{trac}
+%\usemintedstyle{tango}
 \definecolor{LightGray}{HTML}{f8f9fa}
 \setminted{
     tabsize=2, 
-    fontsize=\footnotesize, 
+    fontsize=\tiny, 
     frame=lines,
     framesep=5\fboxrule,
     framerule=1pt,
-    bgcolor=LightGray,
+%    bgcolor=LightGray,
     rulecolor=\color{gray!40},
     linenos
 }
+
+
+
 \usepackage[backend=biber,natbib,
 style=authoryear]{biblatex}
 \addbibresource{diku.bib}

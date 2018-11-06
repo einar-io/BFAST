@@ -1,3 +1,17 @@
+\section{Einar's part}
+
+\begin{frame}[fragile]{Overview}
+\begin{enumerate}
+    \item \texttt{bfast\_step\_5}
+    \item \texttt{bfast\_step\_6} Aske Dorge's rule of thumb of shared
+        memory.
+    \item ..
+\end{enumerate}
+    \pause
+    I prefer if you would ask questions during the presentation.
+\end{frame}
+
+
 \section{\texttt{bfast\_step\_5}} % Einar
 
 % Et af de argumenter, der bruges til at støtte udviklingen af autonome
@@ -40,7 +54,24 @@ unsafe ( intrinsics.opaque <| unzip3 <|
 
 \end{frame}
 
+\begin{frame}[fragile]{CUDA}
+
+\begin{minted}{cuda}
+void bfast_step_5_run(struct bfast_state *s)
+{
+  /* .. */
+  dim3 block(N, 1, 1);
+  dim3 grid(m, 1, 1);
+  const size_t shared_size = N * sizeof(int);
+  bfast_step_5<<<grid, block, shared_size>>>
+    (d_Y, d_y_preds, d_Nss, d_y_errors,
+    d_val_indss, N);
+\end{minted}
+
+\end{frame}
+
 \section{\texttt{bfast\_step\_6}} 
+
 
 \begin{frame}[fragile]{CUDA}
 
@@ -48,14 +79,7 @@ unsafe ( intrinsics.opaque <| unzip3 <|
 __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
     float *sigmas, int n, int N, int k2p2)
 {
-  // Grid dimensions (x, y, z): (m, 1, 1)
-  // Block dimensions (x, y, z ): (n, 1, 1)
-
-  if (threadIdx.x >= n) { return; }
-
-  float *yh = &Yh[blockIdx.x * N]; // Yh is Y, so N cols in memory
-  float *y_error = &y_errors[blockIdx.x * N];
-
+  /* .. */
   __shared__ int num_valids[1024];
   num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
   __syncthreads();
@@ -63,7 +87,8 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   int ns = num_valids[n - 1];
   __syncthreads(); // necessary because shared memory is reused
 
-  float *sigma_shared = (float *) num_valids;
+  //sizeof{int} == sizeof{float}
+  float *sigma_shared = (float *) num_valids; // Here be dragons
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
   sigma_shared[threadIdx.x] = val;
@@ -77,31 +102,24 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   }
 }
 \end{minted}
-
-\end{frame}
-
-
-
-\begin{frame}[fragile]{CUDA}
-
-\begin{minted}{haskell}
-void bfast_step_5_run(struct bfast_state *s)
-{
-  /* .. */
-
-  dim3 block(N, 1, 1);
-  dim3 grid(m, 1, 1);
-  const size_t shared_size = N * sizeof(int);
-  bfast_step_5<<<grid, block, shared_size>>>
-    (d_Y, d_y_preds, d_Nss, d_y_errors,
-    d_val_indss, N);
-\end{minted}
-
 \pause
-
 \mint{cuda}|sizeof{int} == sizeof{float}|
 
-
 \end{frame}
+
+\begin{frame}[fragile]{Launch parameters}
+\begin{minted}{cuda}
+void bfast_step_6_reuse_run(struct bfast_state *s)
+{
+  /* .. */
+  dim3 grid(m, 1, 1);
+  dim3 block(n, 1, 1);
+  bfast_step_6_reuse<<<grid, block>>>
+    (d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
+}
+
+\end{minted}
+\end{frame}
+
 
 
