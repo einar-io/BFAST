@@ -332,17 +332,17 @@ for (int ii = 0; ii < M; ii += T) {
       for (int j = jj; j < min(N,jj+T); j++) {
         float c[T];
         for (int i = ii; i < min(M,ii+T); i++) {
-          c[i] = 0.0;
+          c[i-ii] = 0.0;
         }
         for (int kk = 0; kk < U; kk += T) {
           for (int k = kk; k < min(U,kk+T); k++) {
             for (int i = ii; i < min(M,ii+T); i++) {
-              c[i] += A[i, k] * B[k, j];
+              c[i-ii] += A[i, k] * B[k, j];
             }
           }
         }
         for (int i = ii; i < min(M,ii+T); i++) {
-          C[i,j] = c[i];
+          C[i,j] = c[i-ii];
         }
 } } } }
 \end{minted}
@@ -357,17 +357,17 @@ for (int ii = 0; ii < M; ii += T) {                     // grid.y
     for (int jj = jjj; jj < min(N,jjj+T*T); jj += T) {  // block.y
       for (int j = jj; j < min(N,jj+T); j++) {          // block.x
         float c[T];
-        for (int i = ii; i < min(M,ii+T); i++) { c[i] = 0.0; }
+        for (int i = ii; i < min(M,ii+T); i++) { c[i-ii] = 0.0; }
         for (int kk = 0; kk < U; kk += T) {
           // Copy slice A[ii:ii+T, kk:kk+T] to shared mem (Ash)
           for (int k = kk; k < min(U,kk+T); k++) {
-            float val = Ash[i, k] * B[k, j];
+            float val = B[k, j];
             for (int i = ii; i < min(M,ii+T); i++) { // unroll
-              c[i] += val;
+              c[i-ii] += Ash[i-ii, k] * val;
             }
           }
         }
-        for (int i = ii; i < min(M,ii+T); i++) { C[i,j] = c[i]; }
+        for (int i = ii; i < min(M,ii+T); i++) { C[i,j] = c[i-ii]; }
 } } } }
 \end{minted}
 \end{frame}
