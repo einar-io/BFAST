@@ -2,13 +2,117 @@
 
 \begin{frame}[fragile]{Overview}
 \begin{enumerate}
+    \item Setting the baseline clear.
+    \item \texttt{scan}
     \item \texttt{bfast\_step\_5}
-    \item \texttt{bfast\_step\_6} Aske Dorge's rule of thumb of shared
-        memory.
-    \item ..
+    \item \texttt{bfast\_step\_6} Aske Dorge's rule of thumb for shared
+        memory and its impact.
 \end{enumerate}
     \pause
-    I prefer if you would ask questions during the presentation.
+Questions are appreciated during and after the presentation :)
+\end{frame}
+
+
+\begin{frame}[fragile]{Baseline}
+
+The baseline: \mint{bash}|make benchmark-naive|
+\end{frame}
+
+\begin{frame}[fragile]{Baseline}
+    \centering
+    \begin{minted}{text}
+bfast-naive (all times are an average of 500 runs):
+
+bfast_step_1_run         12.25 µs
+transpose_X              11.86 µs
+bfast_step_2_run      23678.14 µs
+bfast_step_3_run       2648.65 µs
+transpose_Y            1212.03 µs
+bfast_step_4a_run      1265.11 µs
+untranspose_beta0        77.18 µs
+bfast_step_4b_run       507.25 µs
+transpose_beta           75.39 µs
+bfast_step_4c_run      3981.45 µs
+untranspose_y_preds    1209.31 µs
+bfast_step_5_run       2910.24 µs
+bfast_step_6_run       2475.36 µs
+bfast_step_7a_run       480.90 µs
+bfast_step_7b_run        11.07 µs
+bfast_step_8_run       6869.04 µs
+
+
+Total runtime         47425.22 µs
+\end{minted}
+
+\end{frame}
+
+\begin{frame}[fragile]{Baseline}
+%
+%The missing baseline: \mint{bash}|make benchmark-naive|
+    \centering
+    \begin{minted}[escapeinside=||]{text}
+bfast-naive (all times are an average of 500 runs):
+
+bfast_step_1_run         12.25 µs
+transpose_X              11.86 µs
+bfast_step_2_run     |\colorbox{teal}{23678.14 µs}|
+bfast_step_3_run       2648.65 µs
+transpose_Y            1212.03 µs
+bfast_step_4a_run      1265.11 µs
+untranspose_beta0        77.18 µs
+bfast_step_4b_run       507.25 µs
+transpose_beta           75.39 µs
+bfast_step_4c_run     |\colorbox{teal}{3981.45 µs}|
+untranspose_y_preds    1209.31 µs
+bfast_step_5_run       2910.24 µs
+bfast_step_6_run       2475.36 µs
+bfast_step_7a_run       480.90 µs
+bfast_step_7b_run        11.07 µs
+bfast_step_8_run      |\colorbox{teal}{6869.04 µs}|
+
+
+Total runtime         47425.22 µs
+\end{minted}
+
+\pause
+
+We need to keep this in mind to appreciate the optimized kernels:
+
+\end{frame}
+
+\begin{frame}[fragile]{Optimizations}
+
+    %..the optimized kernels: \mint{bash}|make benchmark|
+
+\centering
+\begin{minted}{text}
+bfast-opt (all times are an average of 500 runs):
+
+bfast_step_1_run             12.33 µs
+transpose_X                  11.74 µs
+transpose_Y                1226.57 µs
+bfast_step_2_tiled_run     2684.43 µs
+bfast_step_3_run           2609.89 µs
+bfast_step_4a_tiled_run     708.69 µs
+untranspose_beta0            76.95 µs
+bfast_step_4b_run           501.44 µs
+bfast_step_4c_tiled_run    1002.97 µs
+bfast_step_5_run           2878.34 µs
+bfast_step_6_reuse_run     1981.08 µs
+bfast_step_7a_run           474.89 µs
+bfast_step_7b_run            10.88 µs
+bfast_step_8_opt2_run      1722.23 µs
+
+
+Total runtime             15902.44 µs
+\end{minted}
+
+\pause
+Achieved by applying optimizations:
+\(\frac{47425.22}{15902.44} = 2.98 \times \) speed-up.
+
+
+
 \end{frame}
 
 
@@ -72,7 +176,6 @@ void bfast_step_5_run(struct bfast_state *s)
 
 \section{\texttt{bfast\_step\_6}} 
 
-
 \begin{frame}[fragile]{CUDA}
 
 \begin{minted}{cuda}
@@ -122,4 +225,93 @@ void bfast_step_6_reuse_run(struct bfast_state *s)
 \end{frame}
 
 
+\section{\texttt{scan}} 
 
+\begin{frame}[fragile]{\texttt{scan}}
+\begin{minted}{cuda}
+template <class T>
+__device__ inline T scaninc_block_add_nowrite(volatile T *in)
+{
+  const unsigned int idx    = threadIdx.x;
+  const unsigned int lane   = idx &  31;
+  const unsigned int warpid = idx >> 5;
+
+  T val = scaninc_warp_add(in);
+  __syncthreads();
+
+  if (lane == 31) { in[warpid] = val; }
+  __syncthreads();
+
+  if (warpid == 0) scaninc_warp_add(in);
+  __syncthreads();
+
+  if (warpid > 0) {
+    val = in[warpid-1] + val;
+  }
+
+  return val;
+}
+\end{minted}
+\end{frame}
+
+
+\begin{frame}[fragile]{\texttt{scan}}
+\begin{minted}{cuda}
+template <class T>
+__device__ inline T scaninc_block_add_nowrite(volatile T *in)
+{
+  const unsigned int idx    = threadIdx.x;
+  const unsigned int lane   = idx &  31;
+  const unsigned int warpid = idx >> 5;
+
+  T val = scaninc_warp_add(in);
+  __syncthreads();
+
+  if (lane == 31) { in[warpid] = val; }
+  __syncthreads();
+
+  if (warpid == 0) scaninc_warp_add(in);
+  __syncthreads();
+
+  if (warpid > 0) {
+    val = in[warpid-1] + val;
+  }
+
+  return val;
+}
+
+template <class T>
+__device__ inline void scaninc_block_add(volatile T *in)
+{
+  const unsigned int idx = threadIdx.x;
+  T val = scaninc_block_add_nowrite(in);
+  __syncthreads();
+  in[idx] = val;
+  __syncthreads();
+}
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{scan\_block\_add\_nowrite} or \texttt{reduce}}
+
+    \begin{table}
+        \centering
+        \begin{tabular}{l r}
+            \textbf{Kernel} & \textbf{Average running time} \\ \hline
+            \textbf{bfast\_step\_6\_reuse\_run} &     2135.66 µs \\
+            \textbf{bfast\_step\_6\_reuse\_run (no\_write)} &    2087.66 µs
+        \end{tabular}
+        \caption{Measurements are averages over 500 runs.}
+        \label{tab:nowrite}
+    \end{table}
+
+\end{frame}
+
+\begin{frame}[fragile]{Work-Depth of scan \texttt{scan}}
+
+    \begin{enumerate}
+        \item [Work Complexity W(n)] is the total \# of ops performed,
+        \item [Depth/Step Complexity D(n)] is the \# of sequential steps.
+    \end{enumerate}
+
+\end{frame}
