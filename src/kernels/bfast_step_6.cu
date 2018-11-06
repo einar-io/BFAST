@@ -31,8 +31,12 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   extern __shared__ int num_valids[];
   num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
   __syncthreads();
-  scaninc_block_add<int>(num_valids);
-  int ns = num_valids[n - 1];
+  int val_ns = scaninc_block_add_nowrite<int>(num_valids);
+  //int ns = num_valids[n - 1];
+  int ns;
+  if (threadIdx.x == n-1) {
+    ns = val_ns;
+  }
   __syncthreads(); // necessary because shared memory is reused
 
   float *sigma_shared = (float *) num_valids;
@@ -41,13 +45,19 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   val = val * val;
   sigma_shared[threadIdx.x] = val;
   __syncthreads();
-  scaninc_block_add_nowrite<float>(sigma_shared);
+  float val_sigma = scaninc_block_add_nowrite<float>(sigma_shared);
 
+  if (threadIdx.x == n-1) {
+    sigmas[blockIdx.x] = __fsqrt_rd(val_sigma / ((float)(ns - k2p2)));
+    nss[blockIdx.x] = ns;
+  }
+  /*
   if (threadIdx.x == 0) {
     sigmas[blockIdx.x] =
       __fsqrt_rd(sigma_shared[n - 1] / ((float)(ns - k2p2)));
     nss[blockIdx.x] = ns;
   }
+  */
 }
 
 void bfast_step_6_reuse_run(struct bfast_state *s)
