@@ -27,6 +27,7 @@ let (Nss, y_errors, val_indss) =
 unsafe ( intrinsics.opaque <| unzip3 <|
   map2 (\y y_pred ->
     let y_error_all = zip y y_pred |>
+    F
       map (\(ye,yep) -> if !(f32.isnan ye) 
                         then ye-yep 
                         else f32.nan )
@@ -39,9 +40,11 @@ unsafe ( intrinsics.opaque <| unzip3 <|
 
 \end{frame}
 
+\section{\texttt{bfast\_step\_6}} 
+
 \begin{frame}[fragile]{CUDA}
 
-\begin{minted}{haskell}
+\begin{minted}{cuda}
 __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
     float *sigmas, int n, int N, int k2p2)
 {
@@ -75,4 +78,30 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
 }
 \end{minted}
 
-  \end{frame}
+\end{frame}
+
+
+
+\begin{frame}[fragile]{CUDA}
+
+\begin{minted}{haskell}
+void bfast_step_5_run(struct bfast_state *s)
+{
+  /* .. */
+
+  dim3 block(N, 1, 1);
+  dim3 grid(m, 1, 1);
+  const size_t shared_size = N * sizeof(int);
+  bfast_step_5<<<grid, block, shared_size>>>
+    (d_Y, d_y_preds, d_Nss, d_y_errors,
+    d_val_indss, N);
+\end{minted}
+
+\pause
+
+\mint{cuda}|sizeof{int} == sizeof{float}|
+
+
+\end{frame}
+
+
