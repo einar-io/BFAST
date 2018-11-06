@@ -16,6 +16,7 @@ Questions are appreciated during and after the presentation :)
 \begin{frame}[fragile]{Baseline}
 
 The baseline: \mint{bash}|make benchmark-naive|
+
 \end{frame}
 
 \begin{frame}[fragile]{Baseline}
@@ -85,31 +86,53 @@ We need to keep this in mind to appreciate the optimized kernels:
     %..the optimized kernels: \mint{bash}|make benchmark|
 
 \centering
+
 \begin{minted}{text}
 bfast-opt (all times are an average of 500 runs):
 
-bfast_step_1_run             12.33 µs
-transpose_X                  11.74 µs
-transpose_Y                1226.57 µs
+bfast_step_1_run             11.31 µs
+transpose_X                  10.85 µs
+transpose_Y                1218.72 µs
 bfast_step_2_tiled_run     2684.43 µs
-bfast_step_3_run           2609.89 µs
-bfast_step_4a_tiled_run     708.69 µs
-untranspose_beta0            76.95 µs
-bfast_step_4b_run           501.44 µs
-bfast_step_4c_tiled_run    1002.97 µs
-bfast_step_5_run           2878.34 µs
-bfast_step_6_reuse_run     1981.08 µs
-bfast_step_7a_run           474.89 µs
-bfast_step_7b_run            10.88 µs
-bfast_step_8_opt2_run      1722.23 µs
+bfast_step_3_run           2611.89 µs
+bfast_step_4a_tiled_run     710.43 µs
+untranspose_beta0            76.11 µs
+bfast_step_4b_run           500.99 µs
+bfast_step_4c_tiled_run    1004.92 µs
+bfast_step_5_run           2878.94 µs
+bfast_step_6_reuse_run     1981.48 µs
+bfast_step_7a_run           474.37 µs
+bfast_step_7b_run            10.18 µs
+bfast_step_8_opt2_run      1721.84 µs
 
 
-Total runtime             15902.44 µs
+Total runtime             15896.45 µs
 \end{minted}
+
+
+%bfast-opt (all times are an average of 500 runs):
+%
+%bfast_step_1_run             12.33 µs
+%transpose_X                  11.74 µs
+%transpose_Y                1226.57 µs
+%bfast_step_2_tiled_run     2684.43 µs
+%bfast_step_3_run           2609.89 µs
+%bfast_step_4a_tiled_run     708.69 µs
+%untranspose_beta0            76.95 µs
+%bfast_step_4b_run           501.44 µs
+%bfast_step_4c_tiled_run    1002.97 µs
+%bfast_step_5_run           2878.34 µs
+%bfast_step_6_reuse_run     1981.08 µs
+%bfast_step_7a_run           474.89 µs
+%bfast_step_7b_run            10.88 µs
+%bfast_step_8_opt2_run      1722.23 µs
+%
+%
+%Total runtime             15902.44 µs
 
 \pause
 Achieved by applying optimizations:
-\(\frac{47425.22}{15902.44} = 2.98 \times \) speed-up.
+\(\frac{47425.22}{15896.45} \approx 2.98 \times \) speed-up.
 
 
 
@@ -125,8 +148,7 @@ Achieved by applying optimizations:
 % Asaros holdning til argumentet og diskuter, om I selv finder argumentet
 % holdbart.
 
-\begin{frame}[fragile]{Futhark}
-
+%\begin{frame}[fragile]{Futhark}
 %  -- Cosmin's tip for this bit: Assume N < 1024
 %
 %  ---------------------------------------------
@@ -140,23 +162,22 @@ Achieved by applying optimizations:
 %  -- vald_indss: vald_indss[i] where 0<=i<m is an array of indices indicating
 %  --             the original positions of the elements in y_errors[i], i.e.,
 %  --             before partitioning.
-\begin{minted}{haskell}
-let (Nss, y_errors, val_indss) =
-unsafe ( intrinsics.opaque <| unzip3 <|
-  map2 (\y y_pred ->
-    let y_error_all = zip y y_pred |>
-    F
-      map (\(ye,yep) -> if !(f32.isnan ye) 
-                        then ye-yep 
-                        else f32.nan )
-    let (tups, Ns) = zip2 y_error_all (iota N) |>
-      partitionCos (\(ye,_) -> !(f32.isnan ye)) (0.0, 0)
-    let (y_error, val_inds) = unzip tups
-    in  (Ns, y_error, val_inds)
-      ) images y_preds )
-\end{minted}
+%\begin{minted}{haskell}
+%let (Nss, y_errors, val_indss) =
+%unsafe ( intrinsics.opaque <| unzip3 <|
+%  map2 (\y y_pred ->
+%    let y_error_all = zip y y_pred |>
+%      map (\(ye,yep) -> if !(f32.isnan ye) 
+%                        then ye-yep 
+%                        else f32.nan )
+%    let (tups, Ns) = zip2 y_error_all (iota N) |>
+%      partitionCos (\(ye,_) -> !(f32.isnan ye)) (0.0, 0)
+%    let (y_error, val_inds) = unzip tups
+%    in  (Ns, y_error, val_inds)
+%      ) images y_preds )
+%\end{minted}
 
-\end{frame}
+%\end{frame}
 
 \begin{frame}[fragile]{CUDA}
 
@@ -174,6 +195,69 @@ void bfast_step_5_run(struct bfast_state *s)
 
 \end{frame}
 
+
+\section{\texttt{scan}} 
+
+\begin{frame}[fragile]{\texttt{scaninc\_block\_add\_nowrite}}
+\begin{minted}{cuda}
+template <class T>
+__device__ inline T scaninc_block_add_nowrite(volatile T *in)
+{
+  const unsigned int idx    = threadIdx.x;
+  const unsigned int lane   = idx &  31;
+  const unsigned int warpid = idx >> 5;
+
+  T val = scaninc_warp_add(in); // warps execute in lockstep, no sync needed
+  __syncthreads();
+
+  if (lane == 31) { in[warpid] = val; }
+  __syncthreads();
+
+  if (warpid == 0) scaninc_warp_add(in);
+  __syncthreads();
+
+  if (warpid > 0) {
+    val = in[warpid-1] + val;
+  }
+
+  return val; // Final value is not written back.
+}
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{scan\_block\_add}}
+    Thin wrapper in case we actually need the written array afterwards:
+\begin{minted}{cuda}
+template <class T>
+__device__ inline void scaninc_block_add(volatile T *in)
+{
+  T val = scaninc_block_add_nowrite(in);
+  __syncthreads();
+  in[threadIdx.x] = val;
+  __syncthreads();
+}
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{scan\_block\_add\_nowrite} as \texttt{reduce}}
+
+    Out of a total four usages two of them are in kernel 6:
+
+    \begin{table}
+        \centering
+        \begin{tabular}{l r}
+            \textbf{Kernel} & \textbf{Average running time} \\ \hline
+            \texttt{bfast\_step\_6\_reuse\_run} &     2135.66 µs \\
+            \texttt{bfast\_step\_6\_reuse\_run (\_nowrite)} & 1981.48 µs
+        \end{tabular}
+        \caption{Measurements are averages over 500 runs.}
+        \label{tab:nowrite}
+    \end{table}
+
+\(\frac{2135.66}{1981.48}  \approx 1.08 \times \) speed-up.
+
+\end{frame}
+
 \section{\texttt{bfast\_step\_6}} 
 
 \begin{frame}[fragile]{CUDA}
@@ -183,129 +267,68 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
     float *sigmas, int n, int N, int k2p2)
 {
   /* .. */
-  __shared__ int num_valids[1024];
+  extern __shared__ int num_valids[];
   num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
   __syncthreads();
-  scaninc_block_add<int>(num_valids);
-  int ns = num_valids[n - 1];
+  int val_ns = scaninc_block_add_nowrite<int>(num_valids);
+  int ns;
+  if (threadIdx.x == n-1) {
+    ns = val_ns;           // Naïve: int ns = num_valids[n - 1];
+  }
   __syncthreads(); // necessary because shared memory is reused
 
-  //sizeof{int} == sizeof{float}
-  float *sigma_shared = (float *) num_valids; // Here be dragons
+  float *sigma_shared = (float *) num_valids; // Reuse ok.
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
   sigma_shared[threadIdx.x] = val;
   __syncthreads();
-  scaninc_block_add<float>(sigma_shared);
+  float val_sigma = scaninc_block_add_nowrite<float>(sigma_shared);
 
-  if (threadIdx.x == 0) {
-    sigmas[blockIdx.x] =
-      __fsqrt_rd(sigma_shared[n - 1] / ((float)(ns - k2p2)));
+  if (threadIdx.x == n-1) { // Naïve: __shared__ float sigma_shared[1024];
+    sigmas[blockIdx.x] = __fsqrt_rd(val_sigma / ((float)(ns - k2p2))); // Intrinsic
     nss[blockIdx.x] = ns;
   }
 }
 \end{minted}
 \pause
-\mint{cuda}|sizeof{int} == sizeof{float}|
+One-to-one because: \mint{cuda}|sizeof{int} == 4 == sizeof{float}| = 32 bits.
 
 \end{frame}
 
-\begin{frame}[fragile]{Launch parameters}
-\begin{minted}{cuda}
-void bfast_step_6_reuse_run(struct bfast_state *s)
-{
-  /* .. */
-  dim3 grid(m, 1, 1);
-  dim3 block(n, 1, 1);
-  bfast_step_6_reuse<<<grid, block>>>
-    (d_Y, d_y_errors, d_nss, d_sigmas, n, N, k2p2);
+\begin{frame}[fragile]{Aske Dorge's rule of thumb}
+
+\enquote{
+    \textit{
+       8 words of shared memory per thread does not degrade performance. 
+    }
 }
-
-\end{minted}
-\end{frame}
-
-
-\section{\texttt{scan}} 
-
-\begin{frame}[fragile]{\texttt{scan}}
-\begin{minted}{cuda}
-template <class T>
-__device__ inline T scaninc_block_add_nowrite(volatile T *in)
-{
-  const unsigned int idx    = threadIdx.x;
-  const unsigned int lane   = idx &  31;
-  const unsigned int warpid = idx >> 5;
-
-  T val = scaninc_warp_add(in);
-  __syncthreads();
-
-  if (lane == 31) { in[warpid] = val; }
-  __syncthreads();
-
-  if (warpid == 0) scaninc_warp_add(in);
-  __syncthreads();
-
-  if (warpid > 0) {
-    val = in[warpid-1] + val;
-  }
-
-  return val;
-}
-\end{minted}
-\end{frame}
-
-
-\begin{frame}[fragile]{\texttt{scan}}
-\begin{minted}{cuda}
-template <class T>
-__device__ inline T scaninc_block_add_nowrite(volatile T *in)
-{
-  const unsigned int idx    = threadIdx.x;
-  const unsigned int lane   = idx &  31;
-  const unsigned int warpid = idx >> 5;
-
-  T val = scaninc_warp_add(in);
-  __syncthreads();
-
-  if (lane == 31) { in[warpid] = val; }
-  __syncthreads();
-
-  if (warpid == 0) scaninc_warp_add(in);
-  __syncthreads();
-
-  if (warpid > 0) {
-    val = in[warpid-1] + val;
-  }
-
-  return val;
-}
-
-template <class T>
-__device__ inline void scaninc_block_add(volatile T *in)
-{
-  const unsigned int idx = threadIdx.x;
-  T val = scaninc_block_add_nowrite(in);
-  __syncthreads();
-  in[idx] = val;
-  __syncthreads();
-}
-\end{minted}
-\end{frame}
-
-\begin{frame}[fragile]{\texttt{scan\_block\_add\_nowrite} or \texttt{reduce}}
-
     \begin{table}
         \centering
         \begin{tabular}{l r}
             \textbf{Kernel} & \textbf{Average running time} \\ \hline
-            \textbf{bfast\_step\_6\_reuse\_run} &     2135.66 µs \\
-            \textbf{bfast\_step\_6\_reuse\_run (no\_write)} &    2087.66 µs
+            \texttt{bfast\_step\_6\_\_run} (no reuse) &     2135.66 µs \\
+            \texttt{bfast\_step\_6\_reuse\_run} & 1981.48 µs
         \end{tabular}
         \caption{Measurements are averages over 500 runs.}
-        \label{tab:nowrite}
+       \label{tab:noreuse}
     \end{table}
 
 \end{frame}
+
+
+
+\begin{frame}[fragile]{Occupancy}
+
+    \begin{description}
+        \item [Occupancy] When each block uses more than their fair share of
+            memory, less blocks can be scheduled to run on the SMs at that time.
+            This means some cores are not working, which \textit{is} low occupancy.
+        \item [Memory usage] thus indirectly limits potential speed-up.
+    \end{description}
+
+\end{frame}
+
+
 
 \begin{frame}[fragile]{Work-Depth of scan \texttt{scan}}
 
