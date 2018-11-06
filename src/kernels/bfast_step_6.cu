@@ -27,7 +27,8 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   float *yh = &Yh[blockIdx.x * N]; // Yh is Y, so N cols in memory
   float *y_error = &y_errors[blockIdx.x * N];
 
-  __shared__ int num_valids[1024];
+  //__shared__ int num_valids[1024];
+  extern __shared__ int num_valids[];
   num_valids[threadIdx.x] = !isnan(yh[threadIdx.x]);
   __syncthreads();
   scaninc_block_add<int>(num_valids);
@@ -35,11 +36,12 @@ __global__ void bfast_step_6_reuse(float *Yh, float *y_errors, int *nss,
   __syncthreads(); // necessary because shared memory is reused
 
   float *sigma_shared = (float *) num_valids;
+  //__shared__ float sigma_shared[1024];
   float val = threadIdx.x < ns ? y_error[threadIdx.x] : 0.0;
   val = val * val;
   sigma_shared[threadIdx.x] = val;
   __syncthreads();
-  scaninc_block_add<float>(sigma_shared);
+  scaninc_block_add_nowrite<float>(sigma_shared);
 
   if (threadIdx.x == 0) {
     sigmas[blockIdx.x] =
@@ -57,7 +59,8 @@ void bfast_step_6_reuse_run(struct bfast_state *s)
 
   dim3 block(n, 1, 1);
   dim3 grid(m, 1, 1);
-  bfast_step_6_reuse<<<grid, block>>>(d_Y, d_y_errors, d_nss, d_sigmas,
+  const size_t shared_mem = n * sizeof(float);
+  bfast_step_6_reuse<<<grid, block, shared_mem>>>(d_Y, d_y_errors, d_nss, d_sigmas,
                                       n, N, k2p2);
 }
 
