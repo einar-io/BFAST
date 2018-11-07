@@ -94,7 +94,7 @@ extern "C" void bfast_opt_alt(struct bfast_run_config *cfg)
     BFAST_STEP(bfast_step_6_reuse_run),
     BFAST_STEP(bfast_step_7a_run),
     BFAST_STEP(bfast_step_7b_run),
-    BFAST_STEP(bfast_step_8_less_shr_run)
+    BFAST_STEP(bfast_step_8_opt2_run)
   };
   bfast_run(cfg, "bfast-opt-alt", steps, NUM_ELEMS(steps));
 }

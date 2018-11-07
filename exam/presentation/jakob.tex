@@ -42,8 +42,8 @@ for (int i = 0; i < m; i++) {           // blockIdx.x
   }
 }
 \end{minted}
-Many accesses to same elements of \texttt{Xh} and \texttt{Xth} (global memory).
-Solution: Tiling.
+Many accesses to same elements of \texttt{Xh} and \texttt{Xth}.
+Good opportunity for optimizing temporal locality through tiling.
 \end{frame}
 
 \begin{frame}[fragile]{Applying tiling transformations}
@@ -93,6 +93,8 @@ for (int i = 0; i < m; i += T) {
   Interchange
 \end{center}
 \end{minipage}
+\hfill\\
+Note: Certain bounds checks have been left out.
 \end{frame}
 
 \begin{frame}[fragile]{Applying tiling transformations}
@@ -251,7 +253,7 @@ __global__ void bfast_step_2_tiled(float *Xh, float *Xth, float *Yth,
 \end{minted}
 \end{frame}
 
-\begin{frame}[fragile]{Runtimes}
+\begin{frame}[fragile]{Runtimes on M1}
 \begin{itemize}
   \item  \textbf{naive:} 24072 \textmu s
   \item  \textbf{hoisted:} 18107 \textmu s, \textasciitilde 1.3x speedup from naive
@@ -262,5 +264,253 @@ __global__ void bfast_step_2_tiled(float *Xh, float *Xth, float *Yth,
 
 \section{Tiling in step 4}
 
+
+\begin{frame}[fragile]{Futhark code and semantics}
+\begin{minted}{haskell}
+  let beta0  = map (matvecmul_row_filt Xh) Yh   -- bfast_step_4a
+               |> intrinsics.opaque
+  let beta   = map2 matvecmul_row Xinv beta0    -- bfast_step_4b
+               |> intrinsics.opaque
+  let y_preds= map (matvecmul_row Xt) beta      -- bfast_step_4c
+               |> intrinsics.opaque
+\end{minted}
+Semantics:
+\begin{description}
+  \item[Step 4a:] \((X_hY_h^T)^T\) with filtering based on values in \(Y_h\).
+  \item[Step 4b:] \(m\) matrix-vector multiplications.
+    Each result vector is a row in the output matrix.
+  \item[Step 4c:] Same as 4a but without filtering (simply mm-mult)
+\end{description}
+\end{frame}
+
+\begin{frame}[fragile]{Tiling matrix-matrix multiplication (brief)}
+  Matrix-matrix multiplication optimizations are applied to 4a and 4c.
+
+  Naive mm-mult:
+\begin{minted}{c}
+for (int i = 0; i < M; i++) {
+  for (int j = 0; j < N; j++) {
+    float c = 0.0;
+    for (int k = 0; k < U; k++) {
+      c += A[i, k] * B[k, j];
+    }
+    C[i,j] = c;
+  }
+}
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{Tiling matrix-matrix multiplication (brief)}
+  Stripmine a bunch:
+\begin{minted}{c}
+for (int ii = 0; ii < M; ii += T) {
+  for (int i = ii; i < min(M,ii+T); i++) {
+
+    for (int jjj = 0; j < N; j += T*T) {
+      for (int jj = jjj; jj < min(N,jjj+T*T); jj += T) {
+        for (int j = jj; j < min(N,jj+T); j++) {
+
+          float c = 0.0;
+          for (int kk = 0; kk < U; kk += T) {
+            for (int k = kk; k < min(U,kk+T); k++) {
+              c += A[i, k] * B[k, j];
+            }
+          }
+          C[i,j] = c;
+
+    } } }
+
+} }
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{Tiling matrix-matrix multiplication (brief)}
+  Interchange i-loop inwards, distribute it (array expansion on \texttt{c}),
+  interchange i-loop further inwards.
+\begin{minted}{c}
+for (int ii = 0; ii < M; ii += T) {
+  for (int jjj = 0; j < N; j += T*T) {
+    for (int jj = jjj; jj < min(N,jjj+T*T); jj += T) {
+      for (int j = jj; j < min(N,jj+T); j++) {
+        float c[T];
+        for (int i = ii; i < min(M,ii+T); i++) {
+          c[i-ii] = 0.0;
+        }
+        for (int kk = 0; kk < U; kk += T) {
+          for (int k = kk; k < min(U,kk+T); k++) {
+            for (int i = ii; i < min(M,ii+T); i++) {
+              c[i-ii] += A[i, k] * B[k, j];
+            }
+          }
+        }
+        for (int i = ii; i < min(M,ii+T); i++) {
+          C[i,j] = c[i-ii];
+        }
+} } } }
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{Tiling matrix-matrix multiplication (brief)}
+  Reap the benefits: Hoist multiplication, read elements from \(A\) to shared
+  memory (avoids uncoalesced access).
+\begin{minted}{c}
+for (int ii = 0; ii < M; ii += T) {                     // grid.y
+  for (int jjj = 0; j < N; j += T*T) {                  // grid.x
+    for (int jj = jjj; jj < min(N,jjj+T*T); jj += T) {  // block.y
+      for (int j = jj; j < min(N,jj+T); j++) {          // block.x
+        float c[T];
+        for (int i = ii; i < min(M,ii+T); i++) { c[i-ii] = 0.0; }
+        for (int kk = 0; kk < U; kk += T) {
+          // Copy slice A[ii:ii+T, kk:kk+T] to shared mem (Ash)
+          for (int k = kk; k < min(U,kk+T); k++) {
+            float val = B[k, j];
+            for (int i = ii; i < min(M,ii+T); i++) { // unroll
+              c[i-ii] += Ash[i-ii, k] * val;
+            }
+          }
+        }
+        for (int i = ii; i < min(M,ii+T); i++) { C[i,j] = c[i-ii]; }
+} } } }
+\end{minted}
+\end{frame}
+
+\begin{frame}[fragile]{Regarding 4b}
+  Naive:
+\begin{minted}{c}
+for (int i = 0; i < m; i++) {         // grid.x
+  for (int j = 0; j < k2p2; j++) {    // block.x
+    float accum = 0.0;
+    for (int k = 0; k < k2p2; k++) {  // sequential
+      accum += Xinv[i, j, k] * beta0[i, k];
+    }
+    beta[i, j] = accum;
+  }
+}
+\end{minted}
+\begin{itemize}
+  \item
+    Apart from \texttt{beta0}, nothing is accessed twice.
+  \item
+    No performance gain from copying row from \texttt{beta0} to shared memory
+    (likely due to \texttt{k2p2} being small).
+  \item
+    Note: Uncoalesced access in \texttt{Xinv}.
+\end{itemize}
+\end{frame}
+
 \section{Performance portability and the cost of transposition}
+
+\begin{frame}[fragile]{Not transposing \texttt{Y}}
+Experiment: Avoid transposing \texttt{Y}.
+How to accomplish this?
+\begin{itemize}
+  \item In step 2: Apply tiling transformations, hoist global memory acceses,
+    and apply shared memory.
+  \item In step 4a: Observe that \( (X_hY_h^T)^T = Y_hX_h^T \)
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{bfast-opt} vs \texttt{bfast-opt-alt} runtimes on M1}
+\begin{minipage}{.55\textwidth}
+\centering
+\begin{minted}{text}
+bfast-opt (average of 5000 runs):
+
+bfast_step_1_run             12.30 µs
+transpose_X                  11.58 µs
+transpose_Y                1214.46 µs
+bfast_step_2_tiled_run     2697.29 µs
+bfast_step_3_run           2625.04 µs
+bfast_step_4a_tiled_run     715.22 µs
+untranspose_beta0            75.84 µs
+bfast_step_4b_run           502.77 µs
+bfast_step_4c_tiled_run    1016.98 µs
+bfast_step_5_run           2923.92 µs
+bfast_step_6_reuse_run     2018.00 µs
+bfast_step_7a_run           484.01 µs
+bfast_step_7b_run            10.17 µs
+bfast_step_8_opt2_run      1742.87 µs
+
+
+Total runtime             16050.43 µs
+\end{minted}
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+\centering
+\begin{minted}{text}
+bfast-opt-alt (average of 5000 runs):
+
+bfast_step_1_run               12.48 µs
+transpose_X                    10.96 µs
+
+bfast_step_2_shr_run         5827.21 µs
+bfast_step_3_run             2638.40 µs
+bfast_step_4a_flipped_run    2489.38 µs
+
+bfast_step_4b_run             505.05 µs
+bfast_step_4c_tiled_run      1020.06 µs
+bfast_step_5_run             2899.32 µs
+bfast_step_6_reuse_run       1998.03 µs
+bfast_step_7a_run             477.29 µs
+bfast_step_7b_run              10.02 µs
+bfast_step_8_opt2_run        1730.79 µs
+
+
+Total runtime               19618.98 µs
+\end{minted}
+\end{minipage}
+\end{frame}
+
+\begin{frame}[fragile]{\texttt{bfast-opt} vs \texttt{bfast-opt-alt} runtimes on M2}
+\begin{minipage}{.55\textwidth}
+\centering
+\begin{minted}{text}
+bfast-opt (average of 5000 runs):
+
+bfast_step_1_run              7.88 µs
+transpose_X                   7.39 µs
+transpose_Y                1632.40 µs
+bfast_step_2_tiled_run     2422.79 µs
+bfast_step_3_run           2791.03 µs
+bfast_step_4a_tiled_run     666.09 µs
+untranspose_beta0            78.35 µs
+bfast_step_4b_run           380.87 µs
+bfast_step_4c_tiled_run     936.56 µs
+bfast_step_5_run           3281.51 µs
+bfast_step_6_reuse_run     2040.84 µs
+bfast_step_7a_run           336.99 µs
+bfast_step_7b_run             6.87 µs
+bfast_step_8_opt2_run      1739.55 µs
+
+
+Total runtime             16329.13 µs
+\end{minted}
+\end{minipage}%
+\begin{minipage}{.5\textwidth}
+\centering
+\begin{minted}{text}
+bfast-opt-alt (average of 5000 runs):
+
+bfast_step_1_run                7.86 µs
+transpose_X                     7.44 µs
+
+bfast_step_2_shr_run         2625.80 µs
+bfast_step_3_run             2790.07 µs
+bfast_step_4a_flipped_run    1625.94 µs
+
+bfast_step_4b_run             380.64 µs
+bfast_step_4c_tiled_run       936.11 µs
+bfast_step_5_run             3280.87 µs
+bfast_step_6_reuse_run       2038.85 µs
+bfast_step_7a_run             336.83 µs
+bfast_step_7b_run               6.81 µs
+bfast_step_8_opt2_run        1740.31 µs
+
+
+Total runtime               15777.55 µs
+\end{minted}
+\end{minipage}
+\end{frame}
+
+
 
