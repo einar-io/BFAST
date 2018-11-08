@@ -3,8 +3,8 @@
 
 \section{Translation and optimization}
 
-Before we look at how each kernel is traslated, we mention a couple of
-reoccuring traits of our code:
+Before we look at how each kernel is translated, we mention a couple of
+reoccurring traits of our code:
 
 \subsubsection{Guards} In the beginning of each kernel we include a guard, i.e.
 an early \texttt{return} statement, as an sanity check. A simple example can be
@@ -52,7 +52,7 @@ minimize the risk of making a mistake while writing the code.
 \begin{description}
 
     \item[\texttt{IDX\_2D(i,j,columns)}] is used to calculate the
-        offset into a two-dimentional array for a set of coordinates.
+        offset into a two-dimensional array for a set of coordinates.
 
     \item[\texttt{CEIL\_DIV(x,y)}] Ceiled integer division is used to calculate
         \(\ceil*{x/y}\) without using floating-point arithmetic assuming both

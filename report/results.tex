@@ -1,9 +1,12 @@
 \section{Results}
 
-The final benchmark we were able to reach the timings seen in \autoref{tbl:results}.
+The final benchmark we were able to reach the timings seen in
+\autoref{tbl:results} on M1 only.
 Please note this happened as an average over 500 runs in order to render the
 impact of a slow \enquote{warm-up run} neglible.
 
+Further we provide running times on M2 in \autoref{tbl:resultsM2} for the same
+steps and alternatives step 2 and 4a in \autoref{tbl:resultsM2}.
 \begin{figure}[H]
 \centering
                 \begin{verbatim}
@@ -31,3 +34,64 @@ impact of a slow \enquote{warm-up run} neglible.
 \caption{Benchmark results averaged for 500 runs over the optimized kernels.}
 \label{tbl:results}
 \end{figure}
+
+
+
+\begin{figure}[H]
+\centering
+
+                \begin{verbatim}
+                bfast-opt (all times are an average of 50 runs):
+
+                bfast_step_1_run              8.32 µs
+                transpose_X                   7.54 µs
+                transpose_Y                1624.74 µs
+                bfast_step_2_tiled_run     2824.86 µs
+                bfast_step_3_run           2988.82 µs
+                bfast_step_4a_tiled_run     663.74 µs
+                untranspose_beta0            77.86 µs
+                bfast_step_4b_run           380.76 µs
+                bfast_step_4c_tiled_run     936.80 µs
+                bfast_step_5_run           3282.88 µs
+                bfast_step_6_reuse_run     2223.84 µs
+                bfast_step_7a_run           332.80 µs
+                bfast_step_7b_run             6.76 µs
+                bfast_step_8_opt2_run      1721.28 µs
+
+
+                Total runtime             17081.00 µs
+                \end{verbatim}
+\caption{Benchmark results averaged for 50 runs on M2.}
+\label{tbl:resultsM2}
+\end{figure}
+
+
+
+\begin{figure}[H]
+\centering
+                \begin{verbatim}
+                bfast-opt (all times are an average of 50 runs):
+
+                bfast_step_1_run                8.26 µs
+                transpose_X                     7.42 µs
+                bfast_step_2_shr_run         2975.56 µs
+                bfast_step_3_run             3010.52 µs
+                bfast_step_4a_flipped_run    1620.94 µs
+                untranspose_beta0              77.36 µs
+                bfast_step_4b_run             380.42 µs
+                bfast_step_4c_tiled_run       947.68 µs
+                bfast_step_5_run             3283.10 µs
+                bfast_step_6_reuse_run       2209.74 µs
+                bfast_step_7a_run             332.58 µs
+                bfast_step_7b_run               6.68 µs
+                bfast_step_8_less_shr_run    1823.78 µs
+
+
+                Total runtime               16684.04 µs
+                \end{verbatim}
+\caption{Benchmark results averaged for 50 runs of alternative steps with no
+\texttt{transpose\_Y} kernel on M2.}
+\label{tbl:resultsM2alt}
+\end{figure}
+
+
