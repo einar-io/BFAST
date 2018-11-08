@@ -336,7 +336,7 @@ Wordsize: \mint{cuda}|sizeof{int} == 4 == sizeof{float}| = 32 bits.
     \begin{description}
         \item [Occupancy] When each block uses more than their fair share of
             total available shared memory, less blocks can be scheduled to run
-            concurrently on the SMs. This means some cores are not working, which \textit{is} low occupancy.
+            concurrently on the SMs. This means that some SMs are fully utilized, which \textit{is} low occupancy.
         \item [Memory usage] thus indirectly limits potential speed-up.
     \end{description}
 
@@ -407,7 +407,7 @@ let partitionCos [n] 't
 
   \pause
 
-The best way to optimize \texttt{scan} is not to call it :).
+  The best way to optimize \texttt{scan} is not to call it.
 
 \end{frame}
 
