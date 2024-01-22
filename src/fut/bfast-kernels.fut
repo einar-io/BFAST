@@ -11,7 +11,7 @@ let logplus (x: f32) : f32 =
 let partitionCos [n] 't
            (p : (t -> bool))
            (dummy : t)
-           (arr : [n]t) : ([n]t, i32) =
+           (arr : [n]t) : ([n]t, i64) =
   let cs  = map p arr
   let tfs = map (\f -> if f then 1 else 0) cs
   let ffs = map (\f -> if f then 0 else 1) cs

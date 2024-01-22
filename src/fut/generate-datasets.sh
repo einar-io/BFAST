@@ -2,7 +2,7 @@
 set -e -x
 
 DATA_DIR=../data
-futhark-opencl fut/bfast-kernels.fut
+futhark opencl fut/bfast-kernels.fut
 
 function gen_dataset() {
   gunzip -c $DATA_DIR/sahara.in.gz \

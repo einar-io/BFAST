@@ -14,10 +14,10 @@ debug:
 	nvcc -g -G $(kernels) bfast.cu bfast_util.cu main.o values.o -std=c++11 -o bfast
 
 test: all
-	time futhark-test --compiler=/bin/true --runner=./bfast tests/tests.fut
+	time futhark test --runner=./bfast tests/tests.fut
 
 test-memcheck: all
-	time futhark-test --compiler=/bin/true --runner=./memcheck-runner.sh tests/tests.fut
+	time futhark test --runner=./memcheck-runner.sh tests/tests.fut
 
 benchmark: all
 	time gunzip -c ../data/sahara.in.gz | ./bfast -e bfast-opt -i 1 -r 50 2>&1 >/dev/null
